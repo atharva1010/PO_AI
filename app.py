@@ -1,92 +1,76 @@
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, jsonify
 import pandas as pd
 from rapidfuzz import fuzz
-import re
 
 app = Flask(__name__)
 
 # Load CSV
-df = pd.read_csv("data/po_data.csv")
+df = pd.read_csv("data/po_data.csv", dtype=str)
+df.fillna('', inplace=True)
 
-# Ensure columns are uppercase
-df.columns = df.columns.str.upper()
-
-# Fill any missing AREA with 'OTHER' (just in case)
-df['AREA'] = df['AREA'].fillna('OTHER')
-
-# Convert all string columns to uppercase for matching
-df = df.apply(lambda col: col.str.upper() if col.dtype == 'object' else col)
-
-# Translation dictionary for Hindi/alternate names
+# Translation & synonym dictionary
 TRANSLATE_DICT = {
-    "SUBABOOL": "SUBABOOL",
+    # Materials
     "SUBHABHOOL": "SUBABOOL",
-    "EUCALYPTUS": "EUCALYPTUS",
-    "UK LIPTIS": "EUCALYPTUS",
-    # Add more as needed
+    "SUBABOOL": "SUBABOOL",
+    "EUCALYPTUS": "EUCALYPTUS-LOPS-AND-TOPS",
+    "UK LIPTIS": "EUCALYPTUS-LOPS-AND-TOPS",
+    "POPLAR": "POPLAR-LOPS-AND-TOPS-2 INCH TO 12 INCH",
+    "POPULAR": "POPLAR-LOPS-AND-TOPS-2 INCH TO 12 INCH",
+    "FIREWOOD": "FIREWOOD-MUDDY",
+    "FARRA": "FARRA-WOOD",
+    # Parties
+    "HARYANA TIMBER": "HARYANA TIMBERS",
+    "MFK ENTERPRISES": "M.F.K.ENTERPRISES",
+    "MARUTI TRADING": "MARUTI TRADING COMPANY -(UP)",
+    "RUCHI": "RUCHI ENTERPRISES",
+    "SHIVA GOODS": "SHIVA GOODS CARRIER PVT LTD",
+    "SHIVA CARRIER": "SHIVA GOODS CARRIER PVT LTD",
+    "SHIVA VEENER": "SHIVA VEENER (INDIA) PVT LTD",
+    "SHIVA WINNER": "SHIVA VEENER (INDIA) PVT LTD",
+    "VINAYAK": "VINAYAK TRADERS",
+    "AK INDUSTRIES": "A.K. INDUSTRIES (09CPTPS6130P1ZT)",
+    "DEV BHOOMI": "DEV BHOOMI ENTERPRISES",
+    "SHRI VINAYAK": "SHRI VINAYAK PLY IND P. LTD-UPs",
+    "KHAN": "KHAN TIMBER",
+    "SHRI BALAJI": "SHRI BALAJI ENTERPRISES -(RAMPUR)",
+    "KGN": "KGN TRADERS",
+    "SHIVA TIMBER": "SHIVA TIMBER",
+    "GHASEETA": "GHASEETA KHAN",
+    "GANESHA": "GANESHA TRADERS",
+    "SHAM": "SHAM ENTERPRISES",
+    "BHAGAT": "BHAGAT WOOD CRAFTS",
+    "CHAUDHARY": "CHAUDHARY TIMBER"
 }
 
-def clean_text(text):
-    """Uppercase, remove extra spaces"""
-    return re.sub(r'\s+', ' ', str(text).upper().strip())
-
+# Helper to translate user words
 def translate_word(word):
-    """Translate Hindi/alternate words to CSV word"""
-    return TRANSLATE_DICT.get(word.upper(), word.upper())
+    word_upper = word.upper()
+    return TRANSLATE_DICT.get(word_upper, word_upper)
 
-@app.route("/")
-def home():
-    return render_template("index.html")
-
+# Endpoint
 @app.route("/ask", methods=["POST"])
 def ask():
-    query = request.form.get("query", "")
-    query_clean = clean_text(query)
-    query_words = [translate_word(w) for w in query_clean.split()]
-
-    # Separate AREA from query if it matches RAMPUR/SITAPUR/OTHER
-    area_keywords = {'RAMPUR', 'SITAPUR', 'OTHER'}
-    query_area = None
-    remaining_words = []
-
-    for w in query_words:
-        if w in area_keywords:
-            query_area = w
-        else:
-            remaining_words.append(w)
-
-    matches = []
-
+    user_text = request.json.get("text", "")
+    user_words = [translate_word(w) for w in user_text.strip().split()]
+    
+    results = []
     for _, row in df.iterrows():
-        # Skip row if AREA does not match exactly
-        if query_area and row['AREA'] != query_area:
-            continue
-
-        # Combine PARTY and MATERIAL for fuzzy matching
-        row_text = f"{row['PARTY']} {row['MATERIAL']}"
-        row_text_clean = clean_text(row_text)
-        row_words = row_text_clean.split()
-
-        # Check if all remaining query words match row words
-        all_match = True
-        for q_word in remaining_words:
-            word_score = max([fuzz.partial_ratio(q_word, r_word) for r_word in row_words])
-            if word_score < 70:  # threshold
-                all_match = False
-                break
-
-        if all_match:
-            matches.append({
-                "PO": f"<b>{row['PO']}</b>",
-                "Party": row['PARTY'],
-                "SubArea": row['AREA'],
-                "Material": row['MATERIAL']
+        row_text = f"{row['PARTY']} {row['AREA']} {row['MATERIAL']}"
+        match_count = sum(1 for w in user_words if fuzz.partial_ratio(w, row_text) > 80)
+        # Only include row if all words are matched with some fuzz
+        if match_count == len(user_words):
+            results.append({
+                "PO": row["PO"],
+                "PARTY": row["PARTY"],
+                "AREA": row["AREA"],
+                "MATERIAL": row["MATERIAL"]
             })
-
-    if matches:
-        return jsonify({"answer": matches})
-    else:
-        return jsonify({"answer": "❌ Koi exact PO nahi mila."})
+    
+    if not results:
+        return jsonify({"message": "❌ Koi exact PO nahi mila."})
+    
+    return jsonify(results)
 
 if __name__ == "__main__":
     app.run(debug=True)
