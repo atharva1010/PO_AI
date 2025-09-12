@@ -5,30 +5,34 @@ import re
 
 app = Flask(__name__)
 
-# Load CSV (uppercase headers)
+# Load CSV
 df = pd.read_csv("data/po_data.csv")
 
-# Ensure all string columns are uppercase
+# Ensure columns are uppercase
+df.columns = df.columns.str.upper()
+
+# Fill any missing AREA with 'OTHER' (just in case)
+df['AREA'] = df['AREA'].fillna('OTHER')
+
+# Convert all string columns to uppercase for matching
 df = df.apply(lambda col: col.str.upper() if col.dtype == 'object' else col)
 
-# Simple Hindi/English translation dictionary for common materials
-translation_dict = {
-    "सुबाबूल": "SUBABOOL",
-    "UK LIPTIS": "EUCALYPTUS",
+# Example translation dictionary for Hindi/alternate names
+TRANSLATE_DICT = {
+    "SUBABOOL": "SUBABOOL",
+    "SUBHABHOOL": "SUBABOOL",
     "EUCALYPTUS": "EUCALYPTUS",
-    "SUBABOOL": "SUBABOOL"
-    # Add more mappings as needed
+    "UK LIPTIS": "EUCALYPTUS",
+    # Add more as needed
 }
 
 def clean_text(text):
-    """Lowercase, strip extra spaces, remove punctuation for matching"""
-    text = str(text).upper().strip()
-    text = re.sub(r'[^\w\s]', '', text)  # Remove punctuation
-    return text
+    """Uppercase, remove extra spaces"""
+    return re.sub(r'\s+', ' ', str(text).upper().strip())
 
-def translate_words(words):
-    """Translate words using translation dictionary"""
-    return [translation_dict.get(w, w) for w in words]
+def translate_word(word):
+    """Translate Hindi/alternate words to CSV word"""
+    return TRANSLATE_DICT.get(word.upper(), word.upper())
 
 @app.route("/")
 def home():
@@ -38,20 +42,29 @@ def home():
 def ask():
     query = request.form.get("query", "")
     query_clean = clean_text(query)
-    query_words = translate_words(query_clean.split())
+    query_words = [translate_word(w) for w in query_clean.split()]
 
     matches = []
+
     for _, row in df.iterrows():
+        # Combine row fields for matching
         row_text = f"{row['PARTY']} {row['AREA']} {row['MATERIAL']}"
         row_text_clean = clean_text(row_text)
         row_words = row_text_clean.split()
 
-        # Check if ALL query words are present approximately in row words
-        if all(any(fuzz.partial_ratio(qw, rw) >= 80 for rw in row_words) for qw in query_words):
+        # Check if all query words are present in row words using fuzzy match
+        all_match = True
+        for q_word in query_words:
+            word_score = max([fuzz.partial_ratio(q_word, r_word) for r_word in row_words])
+            if word_score < 70:  # threshold
+                all_match = False
+                break
+
+        if all_match:
             matches.append({
                 "PO": f"<b>{row['PO']}</b>",
                 "Party": row['PARTY'],
-                "Area": row['AREA'],
+                "SubArea": row['AREA'],
                 "Material": row['MATERIAL']
             })
 
