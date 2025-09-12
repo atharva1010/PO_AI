@@ -1,59 +1,60 @@
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, jsonify
 import pandas as pd
-import re
+from rapidfuzz import process, fuzz
 
 app = Flask(__name__)
 
-# Load CSV
-df = pd.read_csv("data/po_data.csv")
-df = df.apply(lambda col: col.str.lower() if col.dtype == 'object' else col)
+# --- Load Data ---
+df = pd.read_excel("data.xlsx")
 
-# Synonyms for correction
-synonyms = {
-    "subabool": ["subabool", "subhabhool", "subabul"],
-    "eucalyptus": ["eucalyptus", "uk liptis", "ukliptis", "nilgiri"],
-    "poplar": ["poplar", "poplaar"],
-    "rampur": ["rampur", "rmpur"],
-    "sitapur": ["sitapur", "sittapur"],
-    "shiva veener": ["shiva veener", "shiva veneer", "shiv veneer"],
-}
+# Columns: ["Party Name", "Area", "Material", "PO"]
 
-def clean_text(text):
-    return re.sub(r'\s+', ' ', str(text).lower().strip())
+# --- Dictionary of Known Words for Auto-correct ---
+known_words = set()
+for col in ["Party Name", "Area", "Material"]:
+    for val in df[col].dropna().astype(str).tolist():
+        for w in val.lower().split():
+            known_words.add(w.strip())
 
-def normalize_word(word):
-    for key, values in synonyms.items():
-        if word in values:
-            return key
+# --- Helper: Auto-correct each word ---
+def autocorrect_word(word):
+    if not word.strip():
+        return word
+    match, score, _ = process.extractOne(word, known_words, scorer=fuzz.ratio)
+    if score > 70:  # threshold for correction
+        return match
     return word
 
-@app.route("/")
-def home():
-    return render_template("index.html")
+def normalize_query(query):
+    words = query.lower().split()
+    corrected = [autocorrect_word(w) for w in words]
+    return " ".join(corrected)
 
-@app.route("/ask", methods=["POST"])
-def ask():
-    query = request.form.get("query", "")
-    query_words = [normalize_word(clean_text(w)) for w in query.split()]
+@app.route("/search", methods=["GET"])
+def search():
+    user_query = request.args.get("q", "").lower().strip()
+    if not user_query:
+        return jsonify({"error": "❌ Query missing"}), 400
 
-    matches = []
+    # Auto-correct the query
+    corrected_query = normalize_query(user_query)
+
+    # Try to match row where ALL words present
+    results = []
     for _, row in df.iterrows():
-        row_text = f"{row['PARTY']} {row.get('AREA','')} {row['MATERIAL']}"
-        row_text_clean = clean_text(row_text)
-
-        # ✅ Check: ALL query words must exist in the same row
-        if all(word in row_text_clean for word in query_words):
-            matches.append({
-                "PO": f"<b>{row['PO']}</b>",
-                "Party": row['PARTY'],
-                "SubArea": row.get('AREA', ''),
-                "Material": row['MATERIAL']
+        row_text = f"{row['Party Name']} {row['Area']} {row['Material']}".lower()
+        if all(word in row_text for word in corrected_query.split()):
+            results.append({
+                "Party": row["Party Name"],
+                "Area": row["Area"],
+                "Material": row["Material"],
+                "PO": row["PO"]
             })
 
-    if matches:
-        return jsonify({"answer": matches})
+    if results:
+        return jsonify({"corrected_query": corrected_query, "results": results})
     else:
-        return jsonify({"answer": "❌ Koi exact PO nahi mila."})
+        return jsonify({"corrected_query": corrected_query, "message": "❌ Koi exact PO nahi mila."})
 
 if __name__ == "__main__":
     app.run(debug=True)
