@@ -9,7 +9,7 @@ app = Flask(__name__)
 
 # === OpenAI API Key ===
 # Security tip: better is to use environment variable
-openai.api_key = os.getenv("OPENAI_API_KEY") or "YOUR_OPENAI_API_KEY_HERE"
+openai.api_key = os.getenv("OPENAI_API_KEY") or "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"
 
 # === Load CSV ===
 df = pd.read_csv("data/po_data.csv")
