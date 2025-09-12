@@ -2,13 +2,18 @@ from flask import Flask, request, render_template, jsonify
 import pandas as pd
 from rapidfuzz import fuzz
 import re
+import os
 
 app = Flask(__name__)
 
-# Load CSV
-df = pd.read_csv("data/po_data.csv")
+# ✅ Load CSV safely
+csv_path = os.path.join(os.path.dirname(__file__), "data", "po_data.csv")
+df = pd.read_csv(csv_path)
 
-# Convert all string columns to lowercase
+# ✅ Make all column names lowercase
+df.columns = [col.lower() for col in df.columns]
+
+# ✅ Convert all string columns to lowercase
 df = df.apply(lambda col: col.str.lower() if col.dtype == 'object' else col)
 
 def clean_text(text):
@@ -27,10 +32,18 @@ def ask():
 
     matches = []
     for _, row in df.iterrows():
-        # Combine row fields for matching
-        row_text = f"{row['PARTY']} {row.get('AREA','')} {row['MATERIAL']}"
+        # ✅ safe row field access
+        party = row["party"] if "party" in df.columns else ""
+        area = row["area"] if "area" in df.columns else ""
+        material = row["material"] if "material" in df.columns else ""
+        po = row["po"] if "po" in df.columns else ""
+
+        row_text = f"{party} {area} {material}"
         row_text_clean = clean_text(row_text)
         row_words = row_text_clean.split()
+
+        if not row_words:
+            continue
 
         # Word-level fuzzy match
         word_scores = []
@@ -38,14 +51,14 @@ def ask():
             max_score = max([fuzz.partial_ratio(q_word, r_word) for r_word in row_words])
             word_scores.append(max_score)
 
-        avg_score = sum(word_scores)/len(word_scores)
+        avg_score = sum(word_scores) / len(word_scores)
 
-        if avg_score >= 70:  # Threshold for match
+        if avg_score >= 70:  # ✅ Threshold for match
             matches.append({
-                "PO": f"<b>{row['PO']}</b>",
-                "Party": row['PARTY'],
-                "SubArea": row.get('AREA', ''),
-                "Material": row['MATERIAL']
+                "PO": f"<b>{po}</b>",
+                "Party": party,
+                "SubArea": area,
+                "Material": material
             })
 
     if matches:
