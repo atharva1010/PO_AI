@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PO-AI (powered by easyTESA)</title>
+  <style>
+    * { box-sizing: border-box; margin:0; padding:0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background: #f0f2f5; display: flex; justify-content: center; padding: 20px; height: 100vh; }
+    html, body { height: 100%; }
+
+    .chat-container {
+      background: #1f1f1f;
+      width: 100%;
+      max-width: 700px;
+      border-radius: 15px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+      height: 100%;
+    }
+
+    .chat-header {
+      background: #4a90e2;
+      color: white;
+      padding: 15px 20px;
+      text-align: center;
+      font-size: 1.5rem;
+      font-weight: bold;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .chat-header span { font-size: 0.8rem; display:block; font-weight: normal; }
+    #datetime { font-size: 0.9rem; }
+
+    #new-chat-btn {
+      background: #00ccff;
+      color: #fff;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    .chat-box {
+      flex: 1;
+      padding: 15px;
+      background: #181818;
+      overflow-y: auto;
+      color: #fff;
+    }
+    .chat-box p { margin-bottom: 10px; line-height: 1.5; }
+    .chat-box b { color: #4a90e2; }
+    .chat-box p.user { color: #ffd700; }
+    .chat-box p.bot { color: #00ff99; }
+
+    form {
+      display: flex;
+      padding: 10px;
+      background: #222;
+      flex-shrink: 0;
+    }
+    input[type=text] {
+      flex: 1;
+      padding: 12px;
+      border-radius: 25px;
+      border: none;
+      outline: none;
+      font-size: 16px;
+      margin-right: 10px;
+    }
+    button {
+      padding: 12px 18px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      font-size: 18px;
+      color: #fff;
+    }
+    #send-btn { background: #4a90e2; }
+    #mic-btn { background: #00ccff; margin-left:5px; }
+    #mic-btn.recording { background: red; }
+
+    table { border-collapse: collapse; width: 100%; margin-top: 10px; color: #fff; }
+    th, td { border: 1px solid #333; padding: 8px; text-align: left; }
+    th { background: #333; }
+    td { background: #222; }
+
+    @media(max-width: 600px){
+      .chat-header { font-size: 1.2rem; }
+      input[type=text] { font-size: 14px; }
+      button { font-size: 16px; padding: 10px 14px; }
+      table th, table td { font-size: 12px; padding: 6px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="chat-container">
+    <div class="chat-header">
+      <div>
+        PO-AI <span>(powered by easyTESA)</span>
+      </div>
+      <div>
+        <span id="datetime"></span>
+        <button id="new-chat-btn">New Chat</button>
+      </div>
+    </div>
+
+    <div id="chat" class="chat-box">
+      <p class="bot"><b>🤖:</b> Welcome to PO AI</p>
+      <p class="bot"><b>🤖:</b> Ask me about wood PO</p>
+    </div>
+
+    <form id="chat-form">
+      <input type="text" id="query" name="query" placeholder="Type your query..." required>
+      <button type="submit" id="send-btn">➡️</button>
+      <button type="button" id="mic-btn">🎤</button>
+    </form>
+  </div>
+
+<script>
+const form = document.getElementById("chat-form");
+const chat = document.getElementById("chat");
+const micBtn = document.getElementById("mic-btn");
+const newChatBtn = document.getElementById("new-chat-btn");
+const datetimeEl = document.getElementById("datetime");
+let lastResult = null;
+
+// Update Date & Time every second
+function updateDateTime(){
+  const now = new Date();
+  const options = { timeZone: 'Asia/Kolkata', hour12:false, weekday:'short', year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit' };
+  datetimeEl.textContent = now.toLocaleString('en-IN', options);
+}
+setInterval(updateDateTime,1000);
+updateDateTime();
+
+// New Chat button
+newChatBtn.addEventListener("click", ()=>{
+  chat.innerHTML = '';
+  lastResult = null;
+  chat.innerHTML += `<p class="bot"><b>🤖:</b> Welcome to PO AI</p>
+                     <p class="bot"><b>🤖:</b> Ask me about wood PO</p>`;
+  chat.scrollTop = chat.scrollHeight;
+});
+
+function digitsToWords(numberStr) {
+  const map = ['zero','one','two','three','four','five','six','seven','eight','nine'];
+  return numberStr.split('').map(d => map[parseInt(d)]).join(' ');
+}
+
+// Speech Recognition
+let recognition;
+if ('webkitSpeechRecognition' in window) {
+  recognition = new webkitSpeechRecognition();
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.lang = "en-IN";
+
+  recognition.onstart = () => micBtn.classList.add("recording");
+  recognition.onend = () => micBtn.classList.remove("recording");
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript.toLowerCase();
+    document.getElementById("query").value = transcript;
+    form.dispatchEvent(new Event('submit'));
+  }
+} else {
+  micBtn.disabled = true;
+  micBtn.innerText = "🎤 Not supported";
+}
+
+micBtn.addEventListener("click", () => { if(recognition) recognition.start(); });
+
+async function processQuery(query) {
+  query = query.trim().toLowerCase();
+  chat.innerHTML += `<p class="user"><b>🧑:</b> ${query}</p>`;
+
+  if(query === "repeat" && lastResult){
+    chat.innerHTML += `<p class="bot"><b>🤖:</b> Repeating last result</p>`;
+    speakLastResult();
+    chat.scrollTop = chat.scrollHeight;
+    return;
+  }
+  if(query === "mic"){
+    chat.innerHTML += `<p class="bot"><b>🤖:</b> Mic mode enabled</p>`;
+    if(recognition) recognition.start();
+    chat.scrollTop = chat.scrollHeight;
+    return;
+  }
+
+  const response = await fetch("/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ query }),
+  });
+
+  const data = await response.json();
+
+  if (Array.isArray(data.answer)) {
+    let html = "<table><tr><th>PO</th><th>Party</th><th>AREA</th><th>Material</th></tr>";
+    let poToCopy = "";
+    data.answer.forEach((item,index)=>{
+      if(index===0) poToCopy = item.PO.replace(/<b>|<\/b>/g,"");
+      html += `<tr><td>${item.PO}</td><td>${item.Party}</td><td>${item.SubArea}</td><td>${item.Material}</td></tr>`;
+    });
+    html += "</table>";
+    chat.innerHTML += `<p class="bot"><b>🤖:</b></p>${html}`;
+
+    lastResult = data.answer;
+    if(poToCopy){
+      navigator.clipboard.writeText(poToCopy).then(()=>{
+        const last4Words = digitsToWords(poToCopy.slice(-4));
+        speakText(last4Words);
+      });
+    }
+  } else {
+    chat.innerHTML += `<p class="bot"><b>🤖:</b> ${data.answer}</p>`;
+    lastResult = [{text: data.answer}];
+    speakText(data.answer);
+  }
+
+  chat.scrollTop = chat.scrollHeight; // auto-scroll
+}
+
+form.addEventListener("submit", async (e)=>{
+  e.preventDefault();
+  const query = document.getElementById("query").value;
+  await processQuery(query);
+  form.reset();
+});
+
+function speakText(text){
+  if('speechSynthesis' in window){
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "en-IN";
+    window.speechSynthesis.speak(utter);
+  }
+}
+
+function speakLastResult(){
+  if(!lastResult) return;
+  const firstPO = lastResult[0].PO ? lastResult[0].PO.replace(/<b>|<\/b>/g,'') : null;
+  if(firstPO){
+    const last4Words = digitsToWords(firstPO.slice(-4));
+    speakText(last4Words);
+  } else if(lastResult[0].text){
+    speakText(lastResult[0].text);
+  }
+}
+</script>
+
+</body>
+</html>
