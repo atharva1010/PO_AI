@@ -2,37 +2,51 @@ from flask import Flask, request, render_template, jsonify
 import pandas as pd
 from rapidfuzz import fuzz
 import re
+import openai
+import os
 
 app = Flask(__name__)
 
-# Load CSV
+# === OpenAI API Key ===
+# Security tip: better is to use environment variable
+openai.api_key = os.getenv("OPENAI_API_KEY") or "YOUR_OPENAI_API_KEY_HERE"
+
+# === Load CSV ===
 df = pd.read_csv("data/po_data.csv")
 
-# Ensure columns are uppercase
-df.columns = df.columns.str.upper()
+# Ensure column names are uppercase and consistent
+df.columns = [col.upper() for col in df.columns]
 
-# Fill any missing AREA with 'OTHER' (just in case)
+# Fill AREA blanks if any
 df['AREA'] = df['AREA'].fillna('OTHER')
 
-# Convert all string columns to uppercase for matching
-df = df.apply(lambda col: col.str.upper() if col.dtype == 'object' else col)
-
-# Translation dictionary for Hindi/alternate names
-TRANSLATE_DICT = {
-    "SUBABOOL": "SUBABOOL",
-    "SUBHABHOOL": "SUBABOOL",
-    "EUCALYPTUS": "EUCALYPTUS",
-    "UK LIPTIS": "EUCALYPTUS",
-    # Add more as needed
-}
-
 def clean_text(text):
-    """Uppercase, remove extra spaces"""
+    """Lowercase, strip, remove extra spaces"""
     return re.sub(r'\s+', ' ', str(text).upper().strip())
 
-def translate_word(word):
-    """Translate Hindi/alternate words to CSV word"""
-    return TRANSLATE_DICT.get(word.upper(), word.upper())
+def fuzzy_match_score(query_words, row_words):
+    """Return average best match score for query vs row"""
+    scores = []
+    for q in query_words:
+        max_score = max([fuzz.partial_ratio(q, r) for r in row_words])
+        scores.append(max_score)
+    return sum(scores)/len(scores) if scores else 0
+
+def openai_correct_query(user_query):
+    """Optional: Use OpenAI to correct spelling or translate"""
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an expert in wood POs and CSV data matching."},
+                {"role": "user", "content": f"Correct and normalize this query for PO search: {user_query}"}
+            ]
+        )
+        corrected = response.choices[0].message.content
+        return corrected
+    except Exception as e:
+        print("OpenAI error:", e)
+        return user_query
 
 @app.route("/")
 def home():
@@ -40,46 +54,29 @@ def home():
 
 @app.route("/ask", methods=["POST"])
 def ask():
-    query = request.form.get("query", "")
-    query_clean = clean_text(query)
-    query_words = [translate_word(w) for w in query_clean.split()]
+    user_query = request.form.get("query", "")
+    if not user_query:
+        return jsonify({"answer": "Query empty!"})
 
-    # Separate AREA from query if it matches RAMPUR/SITAPUR/OTHER
-    area_keywords = {'RAMPUR', 'SITAPUR', 'OTHER'}
-    query_area = None
-    remaining_words = []
-
-    for w in query_words:
-        if w in area_keywords:
-            query_area = w
-        else:
-            remaining_words.append(w)
+    # 1. Optional: Correct spelling / normalize via OpenAI
+    corrected_query = openai_correct_query(user_query)
+    query_clean = clean_text(corrected_query)
+    query_words = query_clean.split()
 
     matches = []
 
     for _, row in df.iterrows():
-        # Skip row if AREA does not match exactly
-        if query_area and row['AREA'] != query_area:
-            continue
-
-        # Combine PARTY and MATERIAL for fuzzy matching
-        row_text = f"{row['PARTY']} {row['MATERIAL']}"
+        row_text = f"{row['PARTY']} {row['AREA']} {row['MATERIAL']}"
         row_text_clean = clean_text(row_text)
         row_words = row_text_clean.split()
 
-        # Check if all remaining query words match row words
-        all_match = True
-        for q_word in remaining_words:
-            word_score = max([fuzz.partial_ratio(q_word, r_word) for r_word in row_words])
-            if word_score < 70:  # threshold
-                all_match = False
-                break
-
-        if all_match:
+        # Check if all query words exist in row (fuzzy match >=70)
+        word_scores = [max([fuzz.partial_ratio(q, r) for r in row_words]) for q in query_words]
+        if all(score >= 70 for score in word_scores):
             matches.append({
                 "PO": f"<b>{row['PO']}</b>",
                 "Party": row['PARTY'],
-                "SubArea": row['AREA'],
+                "Area": row['AREA'],
                 "Material": row['MATERIAL']
             })
 
