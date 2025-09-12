@@ -1,60 +1,82 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, render_template, jsonify
 import pandas as pd
-from rapidfuzz import process, fuzz
+from rapidfuzz import fuzz, process
+import re, os
 
 app = Flask(__name__)
 
-# --- Load Data ---
-df = pd.read_excel("data.xlsx")
+# -----------------------------
+# Load CSV file safely
+# -----------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+file_path = os.path.join(BASE_DIR, "data", "po_data.csv")
+df = pd.read_csv(file_path)
 
-# Columns: ["Party Name", "Area", "Material", "PO"]
+# Convert all string columns to lowercase
+df = df.apply(lambda col: col.str.lower() if col.dtype == "object" else col)
 
-# --- Dictionary of Known Words for Auto-correct ---
-known_words = set()
-for col in ["Party Name", "Area", "Material"]:
-    for val in df[col].dropna().astype(str).tolist():
-        for w in val.lower().split():
-            known_words.add(w.strip())
+# -----------------------------
+# Utility functions
+# -----------------------------
+def clean_text(text):
+    """Lowercase and remove extra spaces"""
+    return re.sub(r"\s+", " ", str(text).lower().strip())
 
-# --- Helper: Auto-correct each word ---
-def autocorrect_word(word):
-    if not word.strip():
-        return word
-    match, score, _ = process.extractOne(word, known_words, scorer=fuzz.ratio)
-    if score > 70:  # threshold for correction
-        return match
-    return word
+def fuzzy_match(query_word, choices, threshold=70):
+    """Find best fuzzy match in choices"""
+    best_match, score, _ = process.extractOne(query_word, choices, scorer=fuzz.partial_ratio)
+    return best_match if score >= threshold else None
 
-def normalize_query(query):
-    words = query.lower().split()
-    corrected = [autocorrect_word(w) for w in words]
-    return " ".join(corrected)
+# -----------------------------
+# Routes
+# -----------------------------
+@app.route("/")
+def home():
+    return render_template("index.html")
 
-@app.route("/search", methods=["GET"])
-def search():
-    user_query = request.args.get("q", "").lower().strip()
-    if not user_query:
-        return jsonify({"error": "❌ Query missing"}), 400
+@app.route("/ask", methods=["POST"])
+def ask():
+    query = request.form.get("query", "")
+    query_clean = clean_text(query)
+    query_words = query_clean.split()
 
-    # Auto-correct the query
-    corrected_query = normalize_query(user_query)
-
-    # Try to match row where ALL words present
-    results = []
+    # Collect all searchable words from dataset
+    all_words = set()
     for _, row in df.iterrows():
-        row_text = f"{row['Party Name']} {row['Area']} {row['Material']}".lower()
-        if all(word in row_text for word in corrected_query.split()):
-            results.append({
-                "Party": row["Party Name"],
-                "Area": row["Area"],
-                "Material": row["Material"],
-                "PO": row["PO"]
+        row_text = f"{row['party']} {row.get('area','')} {row['material']}"
+        all_words.update(row_text.split())
+
+    # Try to autocorrect each query word using fuzzy matching
+    corrected_words = []
+    for q in query_words:
+        match = fuzzy_match(q, list(all_words))
+        if match:
+            corrected_words.append(match)
+        else:
+            corrected_words.append(q)
+
+    # Now filter rows that contain *all corrected words*
+    matches = []
+    for _, row in df.iterrows():
+        row_text = f"{row['party']} {row.get('area','')} {row['material']}"
+        row_text_clean = clean_text(row_text)
+
+        if all(word in row_text_clean for word in corrected_words):
+            matches.append({
+                "PO": f"<b>{row['po']}</b>",
+                "Party": row['party'],
+                "Area": row.get('area', ''),
+                "Material": row['material']
             })
 
-    if results:
-        return jsonify({"corrected_query": corrected_query, "results": results})
+    # Only exact rows where all words matched
+    if matches:
+        return jsonify({"answer": matches})
     else:
-        return jsonify({"corrected_query": corrected_query, "message": "❌ Koi exact PO nahi mila."})
+        return jsonify({"answer": "❌ Koi exact PO nahi mila."})
 
+# -----------------------------
+# Run app
+# -----------------------------
 if __name__ == "__main__":
     app.run(debug=True)
