@@ -6,25 +6,31 @@ import re
 app = Flask(__name__)
 
 # Load CSV
-df = pd.read_csv("data/po_data.csv")
+df = pd.read_csv("data/po_data.csv")  # Ensure columns: PO, AREA, PARTY, MATERIAL
 
-# Lowercase copy for matching
-df_lower = df.apply(lambda col: col.str.lower() if col.dtype == 'object' else col)
+# Clean text function
+def clean_text(text):
+    return re.sub(r'\s+', ' ', str(text).upper().strip())
 
-# Translation dictionary for common mispronunciations / Hindi-English words
-TRANSLATE_DICT = {
-    "subhabhool": "SUBABOOL",
-    "uk liptis": "EUCALYPTUS",
-    "shiva winner": "SHIVA VEENER",
-    "shiva goods you careptus": "SHIVA GOODS CARRIER",
-    "mfk": "M.F.K.ENTERPRISES"
+# Simple translation mapping for common misheard words
+TRANSLATIONS = {
+    "SUBHABOOL": "SUBABOOL",
+    "UK LIPTIS": "EUCALYPTUS",
+    "EUCALIPTUS": "EUCALYPTUS",
+    "VINAYAK TRADERS": "VINAYAK TRADERS",
+    "SHIVA WINNER": "SHIVA VEENER",
+    "SHIVA GOOD": "SHIVA VEENER",
+    "SHIVA GOODS YOU CAREPTUS": "SHIVA VEENER",
+    # Add more mappings as needed
 }
 
-def clean_text(text):
-    text = str(text).lower().strip()
-    for k, v in TRANSLATE_DICT.items():
-        text = text.replace(k.lower(), v.lower())
-    return re.sub(r'\s+', ' ', text)
+def translate_words(query):
+    words = query.split()
+    new_words = []
+    for w in words:
+        w_upper = w.upper()
+        new_words.append(TRANSLATIONS.get(w_upper, w_upper))
+    return " ".join(new_words)
 
 @app.route("/")
 def home():
@@ -33,28 +39,27 @@ def home():
 @app.route("/ask", methods=["POST"])
 def ask():
     query = request.form.get("query", "")
-    query_clean = clean_text(query)
+    query_translated = translate_words(query)
+    query_clean = clean_text(query_translated)
     query_words = query_clean.split()
 
-    matched_row = None
-    for idx, row in df_lower.iterrows():
+    matches = []
+    for _, row in df.iterrows():
         row_text = f"{row['PARTY']} {row['AREA']} {row['MATERIAL']}"
         row_text_clean = clean_text(row_text)
         row_words = row_text_clean.split()
 
-        scores = [max(fuzz.partial_ratio(q, r) for r in row_words) for q in query_words]
-        if all(s >= 80 for s in scores):
-            matched_row = df.iloc[idx]  # original uppercase row
-            break
+        # Check if **all query words exist** in row words (fuzzy match)
+        if all(any(fuzz.partial_ratio(qw, rw) >= 80 for rw in row_words) for qw in query_words):
+            matches.append({
+                "PO": f"<b>{row['PO']}</b>",
+                "Party": row['PARTY'],
+                "Area": row['AREA'],
+                "Material": row['MATERIAL']
+            })
 
-    if matched_row is not None:
-        result = {
-            "PO": f"<b>{matched_row['PO']}</b>",
-            "Party": matched_row['PARTY'],
-            "Area": matched_row['AREA'],
-            "Material": matched_row['MATERIAL']
-        }
-        return jsonify({"answer": [result]})
+    if matches:
+        return jsonify({"answer": matches})
     else:
         return jsonify({"answer": "❌ Koi exact PO nahi mila."})
 
