@@ -8,26 +8,23 @@ app = Flask(__name__)
 # Load CSV
 df = pd.read_csv("data/po_data.csv")
 
-# Make all string columns lowercase for matching
+# Lowercase copy for matching
 df_lower = df.apply(lambda col: col.str.lower() if col.dtype == 'object' else col)
 
-# Optional: define translation dictionary for common Hindi/English variations
+# Translation dictionary for common mispronunciations / Hindi-English words
 TRANSLATE_DICT = {
-    "subhabhool": "subabool",
-    "uk liptis": "eucalyptus",
-    "shiva winner": "shiva veener",
-    "shiva goods you careptus": "shiva goods carrier",
-    "mfk": "m.f.k.enterprises"
+    "subhabhool": "SUBABOOL",
+    "uk liptis": "EUCALYPTUS",
+    "shiva winner": "SHIVA VEENER",
+    "shiva goods you careptus": "SHIVA GOODS CARRIER",
+    "mfk": "M.F.K.ENTERPRISES"
 }
 
 def clean_text(text):
-    """Lowercase, translate, remove extra spaces"""
     text = str(text).lower().strip()
-    # Replace translations
     for k, v in TRANSLATE_DICT.items():
-        text = text.replace(k, v)
-    text = re.sub(r'\s+', ' ', text)
-    return text
+        text = text.replace(k.lower(), v.lower())
+    return re.sub(r'\s+', ' ', text)
 
 @app.route("/")
 def home():
@@ -45,10 +42,9 @@ def ask():
         row_text_clean = clean_text(row_text)
         row_words = row_text_clean.split()
 
-        # Check if all query words are in row words (fuzzy)
         scores = [max(fuzz.partial_ratio(q, r) for r in row_words) for q in query_words]
-        if all(s >= 80 for s in scores):  # threshold
-            matched_row = df.iloc[idx]  # original row with proper capitalization
+        if all(s >= 80 for s in scores):
+            matched_row = df.iloc[idx]  # original uppercase row
             break
 
     if matched_row is not None:
