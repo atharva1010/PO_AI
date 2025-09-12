@@ -6,7 +6,7 @@ import re
 app = Flask(__name__)
 
 # Load CSV
-df = pd.read_csv("data/po-data.csv")
+df = pd.read_csv("data/po_data.csv")
 
 # Make all string columns lowercase for matching
 df_lower = df.apply(lambda col: col.str.lower() if col.dtype == 'object' else col)
