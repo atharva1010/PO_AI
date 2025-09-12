@@ -1,35 +1,34 @@
 from flask import Flask, request, render_template, jsonify
 import pandas as pd
-from rapidfuzz import fuzz, process
-import re, os
+from rapidfuzz import fuzz
+import re
 
 app = Flask(__name__)
 
-# -----------------------------
-# Load CSV file safely
-# -----------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-file_path = os.path.join(BASE_DIR, "data", "po_data.csv")
-df = pd.read_csv(file_path)
+# Load CSV
+df = pd.read_csv("data/po-data.csv")
 
-# Convert all string columns to lowercase
-df = df.apply(lambda col: col.str.lower() if col.dtype == "object" else col)
+# Make all string columns lowercase for matching
+df_lower = df.apply(lambda col: col.str.lower() if col.dtype == 'object' else col)
 
-# -----------------------------
-# Utility functions
-# -----------------------------
+# Optional: define translation dictionary for common Hindi/English variations
+TRANSLATE_DICT = {
+    "subhabhool": "subabool",
+    "uk liptis": "eucalyptus",
+    "shiva winner": "shiva veener",
+    "shiva goods you careptus": "shiva goods carrier",
+    "mfk": "m.f.k.enterprises"
+}
+
 def clean_text(text):
-    """Lowercase and remove extra spaces"""
-    return re.sub(r"\s+", " ", str(text).lower().strip())
+    """Lowercase, translate, remove extra spaces"""
+    text = str(text).lower().strip()
+    # Replace translations
+    for k, v in TRANSLATE_DICT.items():
+        text = text.replace(k, v)
+    text = re.sub(r'\s+', ' ', text)
+    return text
 
-def fuzzy_match(query_word, choices, threshold=70):
-    """Find best fuzzy match in choices"""
-    best_match, score, _ = process.extractOne(query_word, choices, scorer=fuzz.partial_ratio)
-    return best_match if score >= threshold else None
-
-# -----------------------------
-# Routes
-# -----------------------------
 @app.route("/")
 def home():
     return render_template("index.html")
@@ -40,43 +39,28 @@ def ask():
     query_clean = clean_text(query)
     query_words = query_clean.split()
 
-    # Collect all searchable words from dataset
-    all_words = set()
-    for _, row in df.iterrows():
-        row_text = f"{row['party']} {row.get('area','')} {row['material']}"
-        all_words.update(row_text.split())
-
-    # Try to autocorrect each query word using fuzzy matching
-    corrected_words = []
-    for q in query_words:
-        match = fuzzy_match(q, list(all_words))
-        if match:
-            corrected_words.append(match)
-        else:
-            corrected_words.append(q)
-
-    # Now filter rows that contain *all corrected words*
-    matches = []
-    for _, row in df.iterrows():
-        row_text = f"{row['party']} {row.get('area','')} {row['material']}"
+    matched_row = None
+    for idx, row in df_lower.iterrows():
+        row_text = f"{row['PARTY']} {row['AREA']} {row['MATERIAL']}"
         row_text_clean = clean_text(row_text)
+        row_words = row_text_clean.split()
 
-        if all(word in row_text_clean for word in corrected_words):
-            matches.append({
-                "PO": f"<b>{row['po']}</b>",
-                "Party": row['party'],
-                "Area": row.get('area', ''),
-                "Material": row['material']
-            })
+        # Check if all query words are in row words (fuzzy)
+        scores = [max(fuzz.partial_ratio(q, r) for r in row_words) for q in query_words]
+        if all(s >= 80 for s in scores):  # threshold
+            matched_row = df.iloc[idx]  # original row with proper capitalization
+            break
 
-    # Only exact rows where all words matched
-    if matches:
-        return jsonify({"answer": matches})
+    if matched_row is not None:
+        result = {
+            "PO": f"<b>{matched_row['PO']}</b>",
+            "Party": matched_row['PARTY'],
+            "Area": matched_row['AREA'],
+            "Material": matched_row['MATERIAL']
+        }
+        return jsonify({"answer": [result]})
     else:
         return jsonify({"answer": "❌ Koi exact PO nahi mila."})
 
-# -----------------------------
-# Run app
-# -----------------------------
 if __name__ == "__main__":
     app.run(debug=True)
