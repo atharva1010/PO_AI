@@ -17,7 +17,7 @@ df['AREA'] = df['AREA'].fillna('OTHER')
 # Convert all string columns to uppercase for matching
 df = df.apply(lambda col: col.str.upper() if col.dtype == 'object' else col)
 
-# Example translation dictionary for Hindi/alternate names
+# Translation dictionary for Hindi/alternate names
 TRANSLATE_DICT = {
     "SUBABOOL": "SUBABOOL",
     "SUBHABHOOL": "SUBABOOL",
@@ -44,17 +44,32 @@ def ask():
     query_clean = clean_text(query)
     query_words = [translate_word(w) for w in query_clean.split()]
 
+    # Separate AREA from query if it matches RAMPUR/SITAPUR/OTHER
+    area_keywords = {'RAMPUR', 'SITAPUR', 'OTHER'}
+    query_area = None
+    remaining_words = []
+
+    for w in query_words:
+        if w in area_keywords:
+            query_area = w
+        else:
+            remaining_words.append(w)
+
     matches = []
 
     for _, row in df.iterrows():
-        # Combine row fields for matching
-        row_text = f"{row['PARTY']} {row['AREA']} {row['MATERIAL']}"
+        # Skip row if AREA does not match exactly
+        if query_area and row['AREA'] != query_area:
+            continue
+
+        # Combine PARTY and MATERIAL for fuzzy matching
+        row_text = f"{row['PARTY']} {row['MATERIAL']}"
         row_text_clean = clean_text(row_text)
         row_words = row_text_clean.split()
 
-        # Check if all query words are present in row words using fuzzy match
+        # Check if all remaining query words match row words
         all_match = True
-        for q_word in query_words:
+        for q_word in remaining_words:
             word_score = max([fuzz.partial_ratio(q_word, r_word) for r_word in row_words])
             if word_score < 70:  # threshold
                 all_match = False
