@@ -1,43 +1,31 @@
 from flask import Flask, request, render_template, jsonify
 import pandas as pd
-from rapidfuzz import fuzz
 import re
 
 app = Flask(__name__)
 
 # Load CSV
 df = pd.read_csv("data/po_data.csv")
-
-# Convert all string columns to lowercase
 df = df.apply(lambda col: col.str.lower() if col.dtype == 'object' else col)
 
-# 🔹 Synonyms Dictionary (expandable)
+# Synonyms dictionary
 synonyms = {
-    "subabool": ["subabool", "subhabhool", "subabul", "subabulh"],
-    "eucalyptus": ["eucalyptus", "ukliptis", "uk liptis", "nilgiri", "neelgiri", "eucaliptus"],
-    "poplar": ["poplar", "poplaar", "poplur"],
-    "chips": ["chips", "chip", "chippes"],
+    "subabool": ["subabool", "subhabhool", "subabul"],
+    "eucalyptus": ["eucalyptus", "uk liptis", "ukliptis", "nilgiri"],
+    "poplar": ["poplar", "poplaar"],
     "rampur": ["rampur", "rmpur"],
-    "sitapur": ["sitapur", "sittapur", "sittapoor"],
-    "shiva veener": ["shiva veener", "shiva veneer", "shiv veneer", "shiva viner"],
+    "sitapur": ["sitapur", "sittapur"],
+    "shiva veener": ["shiva veener", "shiva veneer", "shiv veneer"],
 }
 
 def clean_text(text):
-    """Lowercase and remove extra spaces"""
     return re.sub(r'\s+', ' ', str(text).lower().strip())
 
 def normalize_word(word):
-    """Normalize query words using synonyms + fuzzy"""
-    word = word.lower().strip()
-    best_match = word
-    best_score = 0
     for key, values in synonyms.items():
-        for val in values:
-            score = fuzz.ratio(word, val)
-            if score > best_score and score > 70:  # fuzzy threshold
-                best_match = key
-                best_score = score
-    return best_match
+        if word in values:
+            return key
+    return word
 
 @app.route("/")
 def home():
@@ -46,26 +34,36 @@ def home():
 @app.route("/ask", methods=["POST"])
 def ask():
     query = request.form.get("query", "")
-    query_clean = clean_text(query)
-    query_words = query_clean.split()
+    query_words = [normalize_word(clean_text(w)) for w in query.split()]
 
-    # 🔹 Normalize words
-    normalized_words = [normalize_word(w) for w in query_words]
+    party_match, area_match, material_match = None, None, None
+
+    # Identify which word belongs to which field
+    for word in query_words:
+        if word in df['PARTY'].unique().tolist():
+            party_match = word
+        elif word in df['AREA'].unique().tolist():
+            area_match = word
+        elif any(word in m for m in df['MATERIAL'].unique().tolist()):
+            material_match = word
+
+    # Filter DataFrame
+    result = df.copy()
+    if party_match:
+        result = result[result['PARTY'].str.contains(party_match)]
+    if area_match:
+        result = result[result['AREA'].str.contains(area_match)]
+    if material_match:
+        result = result[result['MATERIAL'].str.contains(material_match)]
 
     matches = []
-    for _, row in df.iterrows():
-        # Combine row fields for matching
-        row_text = f"{row['PARTY']} {row.get('AREA','')} {row['MATERIAL']}"
-        row_text_clean = clean_text(row_text)
-
-        # Check if all normalized words exist in row_text
-        if all(any(fuzz.partial_ratio(q, rw) > 70 for rw in row_text_clean.split()) for q in normalized_words):
-            matches.append({
-                "PO": f"<b>{row['PO']}</b>",
-                "Party": row['PARTY'],
-                "SubArea": row.get('AREA', ''),
-                "Material": row['MATERIAL']
-            })
+    for _, row in result.iterrows():
+        matches.append({
+            "PO": f"<b>{row['PO']}</b>",
+            "Party": row['PARTY'],
+            "SubArea": row.get('AREA', ''),
+            "Material": row['MATERIAL']
+        })
 
     if matches:
         return jsonify({"answer": matches})
