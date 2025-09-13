@@ -18,8 +18,8 @@ client = OpenAI(api_key=OPENAI_KEY)
 EMBED_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-4o-mini"
 
-DB_PATH = "study_data.db"
-PO_CSV = "data/po_data.csv"
+DB_PATH = os.path.join(os.path.dirname(__file__), "study_data.db")  # auto-root folder
+PO_CSV = os.path.join(os.path.dirname(__file__), "data/po_data.csv")
 
 # thresholds
 EMBED_SIM_THRESHOLD = 0.78
@@ -39,19 +39,36 @@ if "AREA" not in po_df.columns:
 
 # ---------- SQLITE helpers ----------
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS study (
-      id INTEGER PRIMARY KEY,
-      title TEXT,
-      content TEXT,
-      embedding TEXT,
-      created_at REAL
-    )
-    """)
-    conn.commit()
-    conn.close()
+    """Create study_data.db automatically if not exists"""
+    if not os.path.exists(DB_PATH):
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS study (
+          id INTEGER PRIMARY KEY,
+          title TEXT,
+          content TEXT,
+          embedding TEXT,
+          created_at REAL
+        )
+        """)
+        conn.commit()
+        conn.close()
+    else:
+        # ensure table exists
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS study (
+          id INTEGER PRIMARY KEY,
+          title TEXT,
+          content TEXT,
+          embedding TEXT,
+          created_at REAL
+        )
+        """)
+        conn.commit()
+        conn.close()
 
 def add_study_item(title: str, content: str, embedding: Optional[List[float]] = None):
     conn = sqlite3.connect(DB_PATH)
@@ -205,7 +222,7 @@ def chat():
     if not user_msg:
         return jsonify({"error": "empty message"}), 400
 
-    # ----------------- PO SEARCH -----------------
+    # PO SEARCH
     if mode == "po":
         po_matches = search_po_csv(user_msg)
         if po_matches:
@@ -213,7 +230,7 @@ def chat():
             return jsonify({"type": "po", "results": po_list})
         mode = "study"
 
-    # ----------------- STUDY SEARCH -----------------
+    # STUDY SEARCH
     top_matches = find_best_study_matches(user_msg, top_k=3)
 
     if top_matches and top_matches[0][0] >= EMBED_SIM_THRESHOLD:
