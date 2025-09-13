@@ -7,15 +7,15 @@ import os
 
 app = Flask(__name__)
 
-# === OpenAI API Key ===
-openai.api_key = os.getenv("OPENAI_API_KEY") or "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"  # apna key lagao
+# === OpenAI API Key (Render pe ENV var set karna hoga) ===
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # === Load CSV ===
 df = pd.read_csv("data/po_data.csv")
 df.columns = [col.strip().upper() for col in df.columns]
 df["AREA"] = df["AREA"].fillna("OTHER")
 
-# === Alias mapping for common misheard words ===
+# === Alias mapping for misheard words ===
 ALIASES = {
     "SHIVA WINNER": "SHIVA VEENER",
     "VINAYAK PLY IND": "VINAYAK PLY IND P. LTD-UPS",
@@ -23,10 +23,14 @@ ALIASES = {
 
 # --- Utility functions ---
 def clean_text(text: str) -> str:
+    """Uppercase, strip, normalize spaces"""
     return re.sub(r"\s+", " ", str(text).upper().strip())
 
 def openai_correct_query(user_query: str) -> str:
-    """Correct spelling / normalize query using OpenAI"""
+    """Use OpenAI to normalize query"""
+    if not openai.api_key:
+        # agar API key missing hai to raw query return karo
+        return user_query
     try:
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
@@ -41,9 +45,12 @@ def openai_correct_query(user_query: str) -> str:
         return user_query
 
 def apply_aliases(query: str) -> str:
+    """Replace misheard words with correct aliases"""
+    q_clean = clean_text(query)
     for alias, real in ALIASES.items():
-        query = query.replace(alias, real)
-    return query
+        if alias in q_clean:
+            q_clean = q_clean.replace(alias, real)
+    return q_clean
 
 def search_po(user_query: str):
     corrected_query = openai_correct_query(user_query)
@@ -98,4 +105,5 @@ def ask():
     return jsonify({"answer": results})
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))  # Render ke liye port env se lega
+    app.run(host="0.0.0.0", port=port, debug=True)
