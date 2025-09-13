@@ -7,58 +7,40 @@ import os
 
 app = Flask(__name__)
 
-# === OpenAI API Key ===
-# Security tip: better is to use environment variable
+# === OpenAI API Key (ENV ya hardcoded) ===
 openai.api_key = os.getenv("OPENAI_API_KEY") or "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"
 
 # === Load CSV ===
 df = pd.read_csv("data/po_data.csv")
 
-# Ensure column names are uppercase and consistent
-df.columns = [col.upper() for col in df.columns]
+# Ensure column names are uppercase
+df.columns = [col.strip().upper() for col in df.columns]
 
-# Fill AREA blanks if any
+# AREA blanks ko fill karo
 df['AREA'] = df['AREA'].fillna('OTHER')
 
-def clean_text(text):
-    """Lowercase, strip, remove extra spaces"""
+# --- Utility functions ---
+def clean_text(text: str) -> str:
+    """Uppercase, strip, remove extra spaces"""
     return re.sub(r'\s+', ' ', str(text).upper().strip())
 
-def fuzzy_match_score(query_words, row_words):
-    """Return average best match score for query vs row"""
-    scores = []
-    for q in query_words:
-        max_score = max([fuzz.partial_ratio(q, r) for r in row_words])
-        scores.append(max_score)
-    return sum(scores)/len(scores) if scores else 0
-
-def openai_correct_query(user_query):
-    """Optional: Use OpenAI to correct spelling or translate"""
+def openai_correct_query(user_query: str) -> str:
+    """Use OpenAI to correct spelling or normalize"""
     try:
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an expert in wood POs and CSV data matching."},
-                {"role": "user", "content": f"Correct and normalize this query for PO search: {user_query}"}
+                {"role": "system", "content": "You are an expert in matching wood purchase order data."},
+                {"role": "user", "content": f"Correct this query for PO search: {user_query}"}
             ]
         )
-        corrected = response.choices[0].message.content
-        return corrected
+        return response.choices[0].message.content.strip()
     except Exception as e:
         print("OpenAI error:", e)
         return user_query
 
-@app.route("/")
-def home():
-    return render_template("index.html")
-
-@app.route("/ask", methods=["POST"])
-def ask():
-    user_query = request.form.get("query", "")
-    if not user_query:
-        return jsonify({"answer": "Query empty!"})
-
-    # 1. Optional: Correct spelling / normalize via OpenAI
+def search_po(user_query: str):
+    """Fuzzy strict search: all query words must match row"""
     corrected_query = openai_correct_query(user_query)
     query_clean = clean_text(corrected_query)
     query_words = query_clean.split()
@@ -70,20 +52,40 @@ def ask():
         row_text_clean = clean_text(row_text)
         row_words = row_text_clean.split()
 
-        # Check if all query words exist in row (fuzzy match >=70)
-        word_scores = [max([fuzz.partial_ratio(q, r) for r in row_words]) for q in query_words]
-        if all(score >= 70 for score in word_scores):
+        # Each query word must match at least one token in row (>=75 similarity)
+        ok = True
+        for q in query_words:
+            if not any(fuzz.partial_ratio(q, r) >= 75 for r in row_words):
+                ok = False
+                break
+
+        if ok:
             matches.append({
-                "PO": f"<b>{row['PO']}</b>",
+                "PO": row['PO'],
                 "Party": row['PARTY'],
                 "Area": row['AREA'],
                 "Material": row['MATERIAL']
             })
 
-    if matches:
-        return jsonify({"answer": matches})
-    else:
+    return matches
+
+# --- Routes ---
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+@app.route("/ask", methods=["POST"])
+def ask():
+    user_query = request.form.get("query", "").strip()
+    if not user_query:
+        return jsonify({"answer": "⚠️ Query empty!"})
+
+    results = search_po(user_query)
+
+    if not results:
         return jsonify({"answer": "❌ Koi exact PO nahi mila."})
+
+    return jsonify({"answer": results})
 
 if __name__ == "__main__":
     app.run(debug=True)
