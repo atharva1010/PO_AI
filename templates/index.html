@@ -1,62 +1,129 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PO AI Search</title>
-<style>
-body { font-family: Arial; padding: 20px; }
-input[type="text"] { width: 80%; padding: 10px; font-size: 16px; }
-button { padding: 10px 15px; font-size: 16px; }
-.result { margin-top: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 5px; }
-.result b { cursor: pointer; }
-@media(max-width:600px){ input[type="text"]{width:100%;} }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI CSV Search</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0; padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background: #f4f4f9;
+    }
+    .container {
+      width: 95%;
+      max-width: 600px;
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      text-align: center;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 20px;
+      color: #333;
+    }
+    input {
+      width: 100%;
+      padding: 12px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      margin-bottom: 15px;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 5px;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    .answer-box {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f8f9fa;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      min-height: 60px;
+      text-align: left;
+      font-size: 16px;
+      color: #222;
+    }
+    @media(max-width: 600px) {
+      h1 { font-size: 1.2rem; }
+      button, input { font-size: 14px; }
+    }
+  </style>
 </head>
 <body>
-
-<h2>PO AI Search</h2>
-<form id="searchForm" method="POST">
-<input type="text" name="query" id="query" placeholder="Bolke ya type karke search kare..." value="{{ query }}">
-<button type="submit">Search</button>
-<button type="button" id="voiceBtn">🎤 Voice</button>
-</form>
-
-<div id="results">
-{% if results %}
-  {% for r in results %}
-  <div class="result">
-    <b onclick="copyToClipboard('{{r['PO']}}')">PO: {{ r['PO'] }}</b><br>
-    Party: {{ r['Party'] }}<br>
-    Area: {{ r['Area'] }}<br>
-    Material: {{ r['Material'] }}
+  <div class="container">
+    <h1>🔍 AI CSV Voice Search</h1>
+    <input type="text" id="query" placeholder="Type or speak your question..." />
+    <div>
+      <button onclick="search()">Search</button>
+      <button onclick="startVoice()">🎤 Speak</button>
+    </div>
+    <div class="answer-box" id="answer">Your answer will appear here...</div>
   </div>
-  {% endfor %}
-{% endif %}
-</div>
 
-<script>
-function copyToClipboard(text){
-    navigator.clipboard.writeText(text);
-    alert("PO copied: " + text);
-}
+  <script>
+    // Search function
+    async function search() {
+      const query = document.getElementById("query").value.trim();
+      if (!query) return alert("Please enter a question");
 
-// --- Voice recognition ---
-const voiceBtn = document.getElementById('voiceBtn');
-voiceBtn.onclick = () => {
-    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.lang = 'en-US';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+      const res = await fetch("/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query })
+      });
+      const data = await res.json();
 
-    recognition.onresult = (event) => {
-        const spokenText = event.results[0][0].transcript.toUpperCase();
-        document.getElementById('query').value = spokenText;
-        document.getElementById('searchForm').submit();
-    };
-    recognition.onerror = (e) => { alert("Voice recognition error: "+e.error); };
-    recognition.start();
-};
-</script>
+      const ansBox = document.getElementById("answer");
+      ansBox.textContent = data.answer;
+
+      // Auto copy to clipboard
+      navigator.clipboard.writeText(data.answer).catch(err => console.log("Copy failed", err));
+
+      // Speak result
+      let utterance = new SpeechSynthesisUtterance(data.answer);
+      speechSynthesis.speak(utterance);
+    }
+
+    // Voice recognition
+    function startVoice() {
+      if (!('webkitSpeechRecognition' in window)) {
+        alert("Voice recognition not supported in this browser.");
+        return;
+      }
+      const recognition = new webkitSpeechRecognition();
+      recognition.lang = "en-IN"; // आप चाहें तो "hi-IN" भी रख सकते हैं
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.start();
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        document.getElementById("query").value = transcript;
+        search(); // auto search
+      };
+
+      recognition.onerror = (event) => {
+        alert("Voice error: " + event.error);
+      };
+    }
+  </script>
 </body>
 </html>
