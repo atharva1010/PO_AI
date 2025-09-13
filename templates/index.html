@@ -3,143 +3,202 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PO AI Search</title>
+  <title>PO AI Chat</title>
   <style>
     body {
-      font-family: Arial, sans-serif;
       margin: 0; padding: 0;
-      display: flex; justify-content: center; align-items: center;
-      flex-direction: column;
-      background: #f9f9f9;
-      min-height: 100vh;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #0f172a;  /* Dark navy */
+      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
     }
-    .container {
-      width: 95%;
-      max-width: 600px;
-      background: #fff;
-      padding: 20px;
-      border-radius: 12px;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    .chat-container {
+      width: 100%;
+      max-width: 800px;
+      height: 90vh;
+      background: #1e293b;
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+    }
+    .chat-header {
+      padding: 15px;
+      background: #334155;
+      border-radius: 20px 20px 0 0;
+      font-size: 20px;
+      font-weight: bold;
       text-align: center;
     }
-    input {
-      width: 70%;
-      padding: 10px;
-      margin: 10px 0;
-      border: 1px solid #ccc;
-      border-radius: 8px;
+    .chat-box {
+      flex: 1;
+      padding: 15px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .msg {
+      max-width: 75%;
+      padding: 12px 16px;
+      border-radius: 15px;
+      font-size: 16px;
+      line-height: 1.4;
+      word-wrap: break-word;
+      position: relative;
+    }
+    .user-msg {
+      align-self: flex-end;
+      background: #3b82f6;
+      border-bottom-right-radius: 5px;
+    }
+    .bot-msg {
+      align-self: flex-start;
+      background: #475569;
+      border-bottom-left-radius: 5px;
+    }
+    .reply-btn {
+      font-size: 12px;
+      color: #a5b4fc;
+      cursor: pointer;
+      margin-top: 4px;
+      display: inline-block;
+    }
+    .chat-input {
+      display: flex;
+      padding: 12px;
+      background: #334155;
+      border-radius: 0 0 20px 20px;
+      gap: 10px;
+    }
+    .chat-input input {
+      flex: 1;
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      outline: none;
       font-size: 16px;
     }
-    button {
-      padding: 10px 15px;
-      margin: 5px;
+    .chat-input button {
+      padding: 12px 16px;
       border: none;
-      border-radius: 8px;
+      border-radius: 10px;
       font-size: 16px;
       cursor: pointer;
     }
-    .search-btn { background: #007bff; color: white; }
-    .mic-btn { background: #28a745; color: white; }
-    .copy-msg { color: green; font-size: 14px; margin-top: 5px; }
-    ul { text-align: left; }
-    @media(max-width: 600px) {
-      input { width: 100%; }
-    }
+    .send-btn { background: #3b82f6; color: white; }
+    .mic-btn { background: #22c55e; color: white; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 5px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h2>🔍 PO AI Search</h2>
-
-    <form id="searchForm">
-      <input type="text" id="query" name="query" placeholder="Search PO or ask anything..." required>
-      <br>
-      <button type="submit" class="search-btn">Search</button>
-      <button type="button" id="micBtn" class="mic-btn">🎤 Speak</button>
+  <div class="chat-container">
+    <div class="chat-header">🤖 PO AI Assistant</div>
+    <div id="chatBox" class="chat-box"></div>
+    <form id="chatForm" class="chat-input">
+      <input type="text" id="query" placeholder="Type or speak your question..." required>
+      <button type="submit" class="send-btn">➤</button>
+      <button type="button" id="micBtn" class="mic-btn">🎤</button>
     </form>
-
-    <div id="results"></div>
-    <p id="copyMsg" class="copy-msg"></p>
   </div>
 
   <script>
-    // ---- Voice Recognition ----
-    const micBtn = document.getElementById("micBtn");
+    const chatBox = document.getElementById("chatBox");
+    const chatForm = document.getElementById("chatForm");
     const queryInput = document.getElementById("query");
+    const micBtn = document.getElementById("micBtn");
     let recognition;
 
-    if ("webkitSpeechRecognition" in window) {
-      recognition = new webkitSpeechRecognition();
-      recognition.continuous = false;
-      recognition.lang = "en-IN";  // Indian English
-      recognition.interimResults = false;
-
-      recognition.onresult = function(event) {
-        queryInput.value = event.results[0][0].transcript;
-        document.getElementById("searchForm").dispatchEvent(new Event("submit"));
-      };
-
-      recognition.onerror = function() {
-        alert("Mic error! Please try again.");
-      };
-    } else {
-      micBtn.disabled = true;
-      micBtn.innerText = "Mic not supported";
+    // Add message to chat
+    function addMessage(text, sender="bot") {
+      const div = document.createElement("div");
+      div.classList.add("msg", sender === "user" ? "user-msg" : "bot-msg");
+      div.innerHTML = text + (sender === "bot" ? `<div class="reply-btn" onclick="replyTo(this)">Reply</div>` : "");
+      chatBox.appendChild(div);
+      chatBox.scrollTop = chatBox.scrollHeight;
     }
 
-    micBtn.addEventListener("click", () => {
-      if (recognition) recognition.start();
-    });
+    // Reply button
+    function replyTo(el) {
+      const text = el.parentElement.innerText.replace("Reply", "").trim();
+      queryInput.value = `Replying to: "${text}" → `;
+      queryInput.focus();
+    }
 
-    // ---- Form Submit ----
-    document.getElementById("searchForm").addEventListener("submit", async function(e) {
+    // Speak only last 4 digits
+    function speakPO(po) {
+      const last4 = po.slice(-4);
+      const words = last4.split("").map(d => {
+        return {
+          "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
+          "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine"
+        }[d];
+      }).join(" ");
+      const speech = new SpeechSynthesisUtterance(words);
+      speech.lang = "en-IN";
+      window.speechSynthesis.speak(speech);
+    }
+
+    // Speak general text
+    function speak(text) {
+      const speech = new SpeechSynthesisUtterance(text);
+      speech.lang = "en-IN";
+      window.speechSynthesis.speak(speech);
+    }
+
+    // Form submit
+    chatForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       const query = queryInput.value.trim();
       if (!query) return;
+      addMessage(query, "user");
+      queryInput.value = "";
 
       const res = await fetch("/ask", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ query })
       });
-
       const data = await res.json();
-      const resultsDiv = document.getElementById("results");
-      const copyMsg = document.getElementById("copyMsg");
-
-      resultsDiv.innerHTML = "";
-      copyMsg.innerText = "";
 
       if (Array.isArray(data.answer)) {
-        let html = "<h3>📋 PO Results:</h3><ul>";
+        let html = "<b>📋 PO Found:</b><br>";
         data.answer.forEach(r => {
-          html += `<li><b>${r.PO}</b> - ${r.Party} - ${r.Area} - ${r.Material}</li>`;
+          html += `PO: ${r.PO} | ${r.Party} | ${r.Area} | ${r.Material}<br>`;
         });
-        html += "</ul>";
-        resultsDiv.innerHTML = html;
-
-        // Auto-copy first PO
-        if (data.answer.length > 0) {
-          const po = data.answer[0].PO;
-          navigator.clipboard.writeText(po);
-          copyMsg.innerText = `✅ PO ${po} copied to clipboard!`;
-
-          // Speak result
-          speak(`Purchase Order found. ${po}, Party ${data.answer[0].Party}, Area ${data.answer[0].Area}.`);
-        }
-
+        addMessage(html, "bot");
+        if (data.answer.length > 0) speakPO(data.answer[0].PO);
       } else {
-        resultsDiv.innerHTML = `<h3>🤖 AI Answer:</h3><p>${data.answer}</p>`;
+        addMessage("🤖 " + data.answer, "bot");
         speak(data.answer);
       }
     });
 
-    // ---- Text to Speech ----
-    function speak(text) {
-      const speech = new SpeechSynthesisUtterance(text);
-      speech.lang = "en-IN";
-      window.speechSynthesis.speak(speech);
+    // Voice recognition
+    if ("webkitSpeechRecognition" in window) {
+      recognition = new webkitSpeechRecognition();
+      recognition.continuous = false;
+      recognition.lang = "en-IN";
+      recognition.interimResults = false;
+      recognition.onresult = function(event) {
+        queryInput.value = event.results[0][0].transcript;
+        chatForm.dispatchEvent(new Event("submit"));
+      };
+      recognition.onerror = function() {
+        alert("Mic error!");
+      };
+    } else {
+      micBtn.disabled = true;
+      micBtn.innerText = "❌";
     }
+
+    micBtn.addEventListener("click", () => {
+      if (recognition) recognition.start();
+    });
   </script>
 </body>
 </html>
