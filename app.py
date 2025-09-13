@@ -8,7 +8,7 @@ import os
 app = Flask(__name__)
 
 # === OpenAI API Key (ENV ya hardcoded) ===
-openai.api_key = os.getenv("OPENAI_API_KEY") or "sk-xxxx"  # <- apna key lagao
+openai.api_key = os.getenv("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") or ""
 
 # === Load CSV ===
 df = pd.read_csv("data/po_data.csv")
@@ -16,8 +16,9 @@ df = pd.read_csv("data/po_data.csv")
 # Ensure column names are uppercase
 df.columns = [col.strip().upper() for col in df.columns]
 
-# AREA blanks ko fill karo
+# Fill AREA blanks
 df["AREA"] = df["AREA"].fillna("OTHER")
+
 
 # --- Utility functions ---
 def clean_text(text: str) -> str:
@@ -27,12 +28,15 @@ def clean_text(text: str) -> str:
 
 def openai_correct_query(user_query: str) -> str:
     """Use OpenAI to correct spelling or normalize"""
+    if not openai.api_key:
+        return user_query  # fallback if no key
+
     try:
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an expert in matching wood purchase order data."},
-                {"role": "user", "content": f"Correct this query for PO search: {user_query}"},
+                {"role": "system", "content": "You are an expert in correcting noisy PO queries for wood purchase orders."},
+                {"role": "user", "content": f"Correct and clean this query for PO search: {user_query}"},
             ],
         )
         return response.choices[0].message.content.strip()
@@ -57,10 +61,10 @@ def search_po(user_query: str):
 
         ok = True
         for q in query_words:
-            # If query word matches AREA → stricter check (>=90)
+            # Strict AREA check
             if fuzz.partial_ratio(q, row_area) >= 90:
                 continue
-            # Otherwise check PARTY/MATERIAL with normal fuzzy
+            # PARTY/MATERIAL fuzzy check
             elif any(fuzz.partial_ratio(q, r) >= 75 for r in row_words):
                 continue
             else:
