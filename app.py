@@ -1,4 +1,3 @@
-# app.py
 import os
 import json
 import time
@@ -9,22 +8,22 @@ from typing import List, Optional, Tuple
 from flask import Flask, request, render_template, jsonify
 import pandas as pd
 import numpy as np
-import openai
+from openai import OpenAI
 from rapidfuzz import fuzz
 
 # ---------- CONFIG ----------
 OPENAI_KEY = os.getenv("OPENAI_API_KEY")  # set in env, do not hardcode
-openai.api_key = OPENAI_KEY
+client = OpenAI(api_key=OPENAI_KEY)
 
-EMBED_MODEL = "text-embedding-3-small"   # embedding model (if key available)
-CHAT_MODEL = "gpt-4o-mini"               # chat model for fallback/human-like answers
+EMBED_MODEL = "text-embedding-3-small"
+CHAT_MODEL = "gpt-4o-mini"
 
 DB_PATH = "study_data.db"
 PO_CSV = "data/po_data.csv"
 
-# thresholds (tuneable)
-EMBED_SIM_THRESHOLD = 0.78   # for embedding similarity (0..1)
-FUZZY_TEXT_THRESHOLD = 0.70  # fallback fuzzy match threshold (0..1)
+# thresholds
+EMBED_SIM_THRESHOLD = 0.78
+FUZZY_TEXT_THRESHOLD = 0.70
 PO_AREA_STRICT = 90
 PO_WORD_FUZZY = 75
 
@@ -80,8 +79,8 @@ def list_study_items(limit: int = 50):
 def get_embedding(text: str) -> List[float]:
     if not OPENAI_KEY:
         raise RuntimeError("OpenAI key not configured")
-    resp = openai.Embedding.create(model=EMBED_MODEL, input=text)
-    return resp["data"][0]["embedding"]
+    resp = client.embeddings.create(model=EMBED_MODEL, input=text)
+    return resp.data[0].embedding
 
 def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
     if np.linalg.norm(a) == 0 or np.linalg.norm(b) == 0:
@@ -91,11 +90,9 @@ def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
 def find_best_study_matches(query: str, top_k: int = 3) -> List[Tuple[float, dict]]:
     items = list_study_items(5000)
     results = []
-    # Try embeddings if available
     try:
         q_emb = np.array(get_embedding(query), dtype=float)
     except Exception:
-        # fallback to fuzzy text similarity
         for it in items:
             s = max(
                 fuzz.partial_ratio(query.lower(), (it["title"] or "").lower())/100,
@@ -148,17 +145,17 @@ def search_po_csv(user_query: str):
             })
     return matches
 
-# ---------- OpenAI chat fallback (human-like) ----------
+# ---------- OpenAI chat fallback ----------
 def openai_chat_answer(user_query: str, context_texts: Optional[List[str]] = None) -> str:
     if not OPENAI_KEY:
         return "OpenAI not configured. Please enable study data or set OPENAI_API_KEY."
-    sys_prompt = "You are a helpful, friendly tutor. Use context first and answer concisely and clearly."
+    sys_prompt = "You are Tesa AI, a helpful, friendly tutor. Use context first and answer concisely and clearly."
     if context_texts:
         user_prompt = "Context:\n" + "\n".join(context_texts) + "\n\nQuestion: " + user_query
     else:
         user_prompt = user_query
     try:
-        resp = openai.ChatCompletion.create(
+        resp = client.chat.completions.create(
             model=CHAT_MODEL,
             messages=[
                 {"role": "system", "content": sys_prompt},
@@ -190,7 +187,6 @@ def study_add():
     try:
         emb = get_embedding(content)
     except Exception as e:
-        # log and continue storing without embedding
         print("embedding error:", e)
     add_study_item(title or content[:80], content, emb)
     return jsonify({"ok": True})
@@ -198,7 +194,6 @@ def study_add():
 @app.route("/study/list", methods=["GET"])
 def study_list():
     items = list_study_items(50)
-    # return latest first
     for it in items:
         it.pop("embedding", None)
     return jsonify(items)
@@ -207,25 +202,21 @@ def study_list():
 def chat():
     data = request.get_json() or {}
     user_msg = (data.get("message") or "").strip()
-    mode = data.get("mode") or "po"   # "po" or "study" or "normal"
+    mode = data.get("mode") or "po"
     if not user_msg:
         return jsonify({"error": "empty message"}), 400
 
-    # If PO mode requested: check PO CSV first
     if mode == "po":
         po_matches = search_po_csv(user_msg)
         if po_matches:
             return jsonify({"type": "po", "results": po_matches})
-        # else fallthrough to study/ai
         mode = "study"
 
-    # If study mode requested: check stored study DB for close match
     top_matches = find_best_study_matches(user_msg, top_k=3)
     if top_matches and top_matches[0][0] >= EMBED_SIM_THRESHOLD:
         score, item = top_matches[0]
         return jsonify({"type": "study", "source": "stored", "score": score, "answer": item["content"]})
 
-    # If low-confidence stored match or mode=normal: ask OpenAI with context of top stored items
     context_texts = []
     for score, item in top_matches:
         if score >= 0.35:
