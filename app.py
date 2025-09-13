@@ -40,7 +40,7 @@ def openai_correct_query(user_query: str) -> str:
         return user_query
 
 def search_po(user_query: str):
-    """Fuzzy strict search: all query words must match row"""
+    """Fuzzy search with stricter AREA match"""
     corrected_query = openai_correct_query(user_query)
     query_clean = clean_text(corrected_query)
     query_words = query_clean.split()
@@ -48,14 +48,20 @@ def search_po(user_query: str):
     matches = []
 
     for _, row in df.iterrows():
-        row_text = f"{row['PARTY']} {row['AREA']} {row['MATERIAL']}"
+        row_area = clean_text(row['AREA'])
+        row_text = f"{row['PARTY']} {row['MATERIAL']}"
         row_text_clean = clean_text(row_text)
         row_words = row_text_clean.split()
 
-        # Each query word must match at least one token in row (>=75 similarity)
         ok = True
         for q in query_words:
-            if not any(fuzz.partial_ratio(q, r) >= 75 for r in row_words):
+            # If query matches AREA → stricter check
+            if fuzz.partial_ratio(q, row_area) >= 90:
+                continue  
+            # Otherwise check PARTY/MATERIAL with normal fuzzy
+            elif any(fuzz.partial_ratio(q, r) >= 75 for r in row_words):
+                continue
+            else:
                 ok = False
                 break
 
