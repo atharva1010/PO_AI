@@ -2,127 +2,97 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <title>PO Search + AI Assistant</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI CSV Search</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0; padding: 0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      background: #f4f4f9;
-    }
-    .container {
-      width: 95%;
-      max-width: 600px;
-      background: white;
-      padding: 20px;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      text-align: center;
-    }
-    h1 {
-      font-size: 1.5rem;
-      margin-bottom: 20px;
-      color: #333;
-    }
-    input {
-      width: 100%;
-      padding: 12px;
-      font-size: 16px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      margin-bottom: 15px;
-    }
-    button {
-      background: #007bff;
-      color: white;
-      border: none;
-      padding: 12px 20px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 16px;
-      margin: 5px;
-    }
-    button:hover {
-      background: #0056b3;
-    }
-    .answer-box {
-      margin-top: 20px;
-      padding: 15px;
-      background: #f8f9fa;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      min-height: 60px;
-      text-align: left;
-      font-size: 16px;
-      color: #222;
-    }
-    @media(max-width: 600px) {
-      h1 { font-size: 1.2rem; }
-      button, input { font-size: 14px; }
-    }
+    body { font-family: Arial, sans-serif; margin: 20px; background: #f4f4f9; }
+    .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+    h2 { text-align: center; }
+    input, button { width: 100%; padding: 10px; margin: 5px 0; border-radius: 5px; border: 1px solid #ccc; }
+    button { cursor: pointer; background: #007bff; color: white; border: none; }
+    button:hover { background: #0056b3; }
+    #micBtn { background: #28a745; }
+    #micBtn.listening { background: red; }
+    .result { margin-top: 15px; padding: 15px; background: #e9ecef; border-radius: 5px; }
+    .copied { color: green; font-size: 0.9em; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>🔍 AI CSV Voice Search</h1>
-    <input type="text" id="query" placeholder="Type or speak your question..." />
-    <div>
-      <button onclick="search()">Search</button>
-      <button onclick="startVoice()">🎤 Speak</button>
-    </div>
-    <div class="answer-box" id="answer">Your answer will appear here...</div>
+    <h2>📮 Post Office Search + 🤖 AI Assistant</h2>
+    <input type="text" id="query" placeholder="Type or speak your query...">
+    <button onclick="searchData()">🔍 Search PO</button>
+    <button onclick="askAI()">🤖 Ask AI</button>
+    <button id="micBtn" onclick="startListening()">🎤 Speak</button>
+    <div id="result" class="result"></div>
+    <p id="copyMsg" class="copied"></p>
   </div>
 
   <script>
-    // Search function
-    async function search() {
-      const query = document.getElementById("query").value.trim();
-      if (!query) return alert("Please enter a question");
-
+    async function searchData() {
+      const q = document.getElementById("query").value;
       const res = await fetch("/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query })
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q })
       });
       const data = await res.json();
-
-      const ansBox = document.getElementById("answer");
-      ansBox.textContent = data.answer;
-
-      // Auto copy to clipboard
-      navigator.clipboard.writeText(data.answer).catch(err => console.log("Copy failed", err));
-
-      // Speak result
-      let utterance = new SpeechSynthesisUtterance(data.answer);
-      speechSynthesis.speak(utterance);
+      showResult(data.answer);
     }
 
-    // Voice recognition
-    function startVoice() {
+    async function askAI() {
+      const q = document.getElementById("query").value;
+      const res = await fetch("/ask", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q })
+      });
+      const data = await res.json();
+      showResult(data.answer);
+    }
+
+    function showResult(text) {
+      const resultDiv = document.getElementById("result");
+      resultDiv.innerText = text;
+      navigator.clipboard.writeText(text).then(() => {
+        document.getElementById("copyMsg").innerText = "✅ Auto Copied!";
+      });
+      speak(text);
+    }
+
+    // 🎤 Speech recognition
+    function startListening() {
+      const micBtn = document.getElementById("micBtn");
       if (!('webkitSpeechRecognition' in window)) {
-        alert("Voice recognition not supported in this browser.");
+        alert("Speech Recognition not supported in this browser.");
         return;
       }
       const recognition = new webkitSpeechRecognition();
-      recognition.lang = "en-IN"; // आप चाहें तो "hi-IN" भी रख सकते हैं
+      recognition.lang = "en-IN";
       recognition.interimResults = false;
       recognition.maxAlternatives = 1;
 
+      micBtn.classList.add("listening");
       recognition.start();
 
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        document.getElementById("query").value = transcript;
-        search(); // auto search
+      recognition.onresult = function(event) {
+        const speech = event.results[0][0].transcript;
+        document.getElementById("query").value = speech;
+        micBtn.classList.remove("listening");
       };
 
-      recognition.onerror = (event) => {
-        alert("Voice error: " + event.error);
+      recognition.onerror = function() {
+        micBtn.classList.remove("listening");
       };
+
+      recognition.onend = function() {
+        micBtn.classList.remove("listening");
+      };
+    }
+
+    // 🔊 Speak answer
+    function speak(text) {
+      const msg = new SpeechSynthesisUtterance(text);
+      msg.lang = "en-IN";
+      window.speechSynthesis.speak(msg);
     }
   </script>
 </body>
