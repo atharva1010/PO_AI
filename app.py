@@ -1,109 +1,67 @@
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, jsonify, render_template
 import pandas as pd
-from rapidfuzz import fuzz
-import re
 import openai
 import os
+import difflib
 
+# Flask app
 app = Flask(__name__)
 
-# === OpenAI API Key (Render pe ENV var set karna hoga) ===
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# Load environment variable (Render पर आप OPENAI_API_KEY set करेंगे)
+openai.api_key = os.getenv("OPENAI_API_KEY") or "sk-your-api-key-here"
 
-# === Load CSV ===
-df = pd.read_csv("data/po_data.csv")
-df.columns = [col.strip().upper() for col in df.columns]
-df["AREA"] = df["AREA"].fillna("OTHER")
+# Load CSV file
+CSV_FILE = "data.csv"
+if os.path.exists(CSV_FILE):
+    df = pd.read_csv(CSV_FILE)
+else:
+    df = pd.DataFrame(columns=["question", "answer"])
 
-# === Alias mapping for misheard words ===
-ALIASES = {
-    "SHIVA WINNER": "SHIVA VEENER",
-    "VINAYAK PLY IND": "VINAYAK PLY IND P. LTD-UPS",
-}
+def search_csv(user_query):
+    """CSV file me closest match dhundho"""
+    questions = df['question'].astype(str).tolist()
+    matches = difflib.get_close_matches(user_query.lower(), [q.lower() for q in questions], n=1, cutoff=0.6)
 
-# --- Utility functions ---
-def clean_text(text: str) -> str:
-    """Uppercase, strip, normalize spaces"""
-    return re.sub(r"\s+", " ", str(text).upper().strip())
+    if matches:
+        match_index = [q.lower() for q in questions].index(matches[0])
+        return df.iloc[match_index]['answer']
+    return None
 
-def openai_correct_query(user_query: str) -> str:
-    """Use OpenAI to normalize query"""
-    if not openai.api_key:
-        # agar API key missing hai to raw query return karo
-        return user_query
+def ask_ai(user_query):
+    """Agar CSV me answer na mile to AI se pucho"""
     try:
-        response = openai.chat.completions.create(
-            model="gpt-4o-mini",
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",   # free/cheap model
             messages=[
-                {"role": "system", "content": "You are an expert in wood purchase order CSV data."},
-                {"role": "user", "content": f"Correct and normalize this query: {user_query}"},
+                {"role": "system", "content": "You are a helpful assistant. User will ask about CSV topics or anything else."},
+                {"role": "user", "content": user_query}
             ],
+            max_tokens=200
         )
-        return response.choices[0].message.content.strip()
+        return response['choices'][0]['message']['content']
     except Exception as e:
-        print("OpenAI error:", e)
-        return user_query
+        return f"⚠️ AI error: {str(e)}"
 
-def apply_aliases(query: str) -> str:
-    """Replace misheard words with correct aliases"""
-    q_clean = clean_text(query)
-    for alias, real in ALIASES.items():
-        if alias in q_clean:
-            q_clean = q_clean.replace(alias, real)
-    return q_clean
+@app.route("/")
+def index():
+    return render_template("index.html")
 
-def search_po(user_query: str):
-    corrected_query = openai_correct_query(user_query)
-    corrected_query = apply_aliases(corrected_query)
-    query_clean = clean_text(corrected_query)
-    query_words = query_clean.split()
+@app.route("/search", methods=["POST"])
+def search():
+    data = request.get_json()
+    user_query = data.get("query", "").strip()
 
-    matches = []
-    for _, row in df.iterrows():
-        row_area = clean_text(row["AREA"])
-        row_text = f"{row['PARTY']} {row['MATERIAL']}"
-        row_text_clean = clean_text(row_text)
-        row_words = row_text_clean.split()
-
-        ok = True
-        for q in query_words:
-            if fuzz.partial_ratio(q, row_area) >= 90:
-                continue
-            elif any(fuzz.partial_ratio(q, r) >= 75 for r in row_words):
-                continue
-            else:
-                ok = False
-                break
-        if ok:
-            matches.append({
-                "PO": row["PO"],
-                "Party": row["PARTY"],
-                "Area": row["AREA"],
-                "Material": row["MATERIAL"]
-            })
-    return matches
-
-# --- Routes ---
-@app.route("/", methods=["GET", "POST"])
-def home():
-    results = []
-    query = ""
-    if request.method == "POST":
-        query = request.form.get("query", "").strip()
-        if query:
-            results = search_po(query)
-    return render_template("index.html", query=query, results=results)
-
-@app.route("/ask", methods=["POST"])
-def ask():
-    user_query = request.form.get("query", "").strip()
     if not user_query:
-        return jsonify({"answer": "⚠️ Query empty!"})
-    results = search_po(user_query)
-    if not results:
-        return jsonify({"answer": "❌ Koi exact PO nahi mila."})
-    return jsonify({"answer": results})
+        return jsonify({"answer": "⚠️ Please ask a valid question."})
+
+    # 1) Try CSV search
+    csv_answer = search_csv(user_query)
+    if csv_answer:
+        return jsonify({"answer": csv_answer})
+
+    # 2) Else ask AI
+    ai_answer = ask_ai(user_query)
+    return jsonify({"answer": ai_answer})
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # Render ke liye port env se lega
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(debug=True)
