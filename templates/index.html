@@ -1,204 +1,243 @@
+<!-- templates/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PO AI Chat</title>
-  <style>
-    body {
-      margin: 0; padding: 0;
-      font-family: "Segoe UI", Arial, sans-serif;
-      background: #0f172a;  /* Dark navy */
-      color: #fff;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-    }
-    .chat-container {
-      width: 100%;
-      max-width: 800px;
-      height: 90vh;
-      background: #1e293b;
-      border-radius: 20px;
-      display: flex;
-      flex-direction: column;
-      box-shadow: 0 8px 20px rgba(0,0,0,0.4);
-    }
-    .chat-header {
-      padding: 15px;
-      background: #334155;
-      border-radius: 20px 20px 0 0;
-      font-size: 20px;
-      font-weight: bold;
-      text-align: center;
-    }
-    .chat-box {
-      flex: 1;
-      padding: 15px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .msg {
-      max-width: 75%;
-      padding: 12px 16px;
-      border-radius: 15px;
-      font-size: 16px;
-      line-height: 1.4;
-      word-wrap: break-word;
-      position: relative;
-    }
-    .user-msg {
-      align-self: flex-end;
-      background: #3b82f6;
-      border-bottom-right-radius: 5px;
-    }
-    .bot-msg {
-      align-self: flex-start;
-      background: #475569;
-      border-bottom-left-radius: 5px;
-    }
-    .reply-btn {
-      font-size: 12px;
-      color: #a5b4fc;
-      cursor: pointer;
-      margin-top: 4px;
-      display: inline-block;
-    }
-    .chat-input {
-      display: flex;
-      padding: 12px;
-      background: #334155;
-      border-radius: 0 0 20px 20px;
-      gap: 10px;
-    }
-    .chat-input input {
-      flex: 1;
-      padding: 12px;
-      border-radius: 10px;
-      border: none;
-      outline: none;
-      font-size: 16px;
-    }
-    .chat-input button {
-      padding: 12px 16px;
-      border: none;
-      border-radius: 10px;
-      font-size: 16px;
-      cursor: pointer;
-    }
-    .send-btn { background: #3b82f6; color: white; }
-    .mic-btn { background: #22c55e; color: white; }
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 5px; }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>PO AI Chat — Study Mode</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>
+  :root{
+    --bg:#0b1020; --card:#0f1724; --accent:#6ee7b7; --muted:#94a3b8;
+    --user:#0ea5e9; --bot:#334155;
+  }
+  body{background:linear-gradient(180deg,#071126 0%, #061428 100%);font-family:Inter,Segoe UI,Arial;margin:0;color:#e6eef8}
+  .app{width:100%;max-width:900px;margin:24px auto;height:92vh;display:flex;flex-direction:column;border-radius:14px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,0.6)}
+  header{background:linear-gradient(90deg,#0f1724,#0b1b2b);padding:14px 18px;display:flex;align-items:center;gap:12px}
+  header h1{font-size:18px;margin:0}
+  .controls{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .toggle{background:#071226;border-radius:8px;padding:6px 8px;color:var(--muted);font-size:13px;cursor:pointer}
+  main{flex:1;display:flex;gap:12px}
+  .chat{flex:1;background:var(--card);padding:16px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
+  .messages{flex:1;overflow:auto;padding:8px;display:flex;flex-direction:column;gap:12px}
+  .msg{max-width:78%;padding:12px;border-radius:12px;font-size:15px;line-height:1.25}
+  .msg.user{align-self:flex-end;background:linear-gradient(180deg,var(--user),#0284c7);color:#012; border-bottom-right-radius:4px}
+  .msg.bot{align-self:flex-start;background:linear-gradient(180deg,var(--bot),#243447);color:#e6eef8;border-bottom-left-radius:4px}
+  .inputBar{display:flex;gap:8px;padding:12px;background:linear-gradient(180deg,#071326,#061222)}
+  .inputBar input{flex:1;padding:12px;border-radius:10px;border:1px solid #0b2236;background:#081426;color:#e6eef8}
+  .btn{padding:10px 12px;border-radius:10px;border:none;cursor:pointer;background:#0ea5e9;color:#012}
+  .mic{background:#16a34a}
+  .teach{background:#7c3aed}
+  .side{width:320px;background:linear-gradient(180deg,#071322,#081427);padding:12px;display:flex;flex-direction:column;gap:8px}
+  .small{font-size:13px;color:var(--muted)}
+  .modeActive{color:var(--accent);font-weight:700}
+  .po-item{background:#071a2a;padding:10px;border-radius:10px;border:1px solid #123048}
+  @media(max-width:900px){.app{height:100vh;}.side{display:none}}
+</style>
 </head>
 <body>
-  <div class="chat-container">
-    <div class="chat-header">🤖 PO AI Assistant</div>
-    <div id="chatBox" class="chat-box"></div>
-    <form id="chatForm" class="chat-input">
-      <input type="text" id="query" placeholder="Type or speak your question..." required>
-      <button type="submit" class="send-btn">➤</button>
-      <button type="button" id="micBtn" class="mic-btn">🎤</button>
-    </form>
+  <div class="app">
+    <header>
+      <h1>🤖 PO-AI (Study Mode)</h1>
+      <div class="controls">
+        <div id="modeLabel" class="small">Mode: <span id="activeMode" class="modeActive">PO</span></div>
+        <button id="modeToggle" class="toggle small">Switch to Study</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="chat">
+        <div id="messages" class="messages">
+          <!-- messages appear here -->
+        </div>
+
+        <form id="chatForm" class="inputBar" onsubmit="return false;">
+          <input id="inputText" autocomplete="off" placeholder="Type or press mic to speak..." />
+          <button id="sendBtn" class="btn">Send</button>
+          <button id="micBtn" class="btn mic" type="button">🎤</button>
+          <button id="teachBtn" class="btn teach" type="button" title="Teach the bot (save to study)">Teach</button>
+        </form>
+      </section>
+
+      <aside class="side">
+        <div class="small">Study Items (latest)</div>
+        <div id="studyList" style="display:flex;flex-direction:column;gap:8px;overflow:auto;max-height:60vh"></div>
+        <div style="margin-top:auto" class="small">Tip: In PO mode ask like "vinayak traders rampur eucalyptus". In study mode press Teach to save current input.</div>
+      </aside>
+    </main>
   </div>
 
-  <script>
-    const chatBox = document.getElementById("chatBox");
-    const chatForm = document.getElementById("chatForm");
-    const queryInput = document.getElementById("query");
-    const micBtn = document.getElementById("micBtn");
-    let recognition;
+<script>
+/* ----------------- client logic ----------------- */
+let mode = "po"; // "po" or "study"
+const messages = document.getElementById("messages");
+const inputText = document.getElementById("inputText");
+const sendBtn = document.getElementById("sendBtn");
+const micBtn = document.getElementById("micBtn");
+const teachBtn = document.getElementById("teachBtn");
+const modeToggle = document.getElementById("modeToggle");
+const activeMode = document.getElementById("activeMode");
+const studyList = document.getElementById("studyList");
 
-    // Add message to chat
-    function addMessage(text, sender="bot") {
-      const div = document.createElement("div");
-      div.classList.add("msg", sender === "user" ? "user-msg" : "bot-msg");
-      div.innerHTML = text + (sender === "bot" ? `<div class="reply-btn" onclick="replyTo(this)">Reply</div>` : "");
-      chatBox.appendChild(div);
-      chatBox.scrollTop = chatBox.scrollHeight;
-    }
+function appendMsg(text, who="bot") {
+  const div = document.createElement("div");
+  div.className = "msg " + (who==="user" ? "user" : "bot");
+  div.innerHTML = text;
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
 
-    // Reply button
-    function replyTo(el) {
-      const text = el.parentElement.innerText.replace("Reply", "").trim();
-      queryInput.value = `Replying to: "${text}" → `;
-      queryInput.focus();
-    }
+// convert "1234" -> "one two three four"
+function speakLast4(po) {
+  const last4 = (po + "").slice(-4);
+  const map = {"0":"zero","1":"one","2":"two","3":"three","4":"four","5":"five","6":"six","7":"seven","8":"eight","9":"nine"};
+  const words = last4.split("").map(d=>map[d]||d).join(" ");
+  const u = new SpeechSynthesisUtterance(words);
+  u.lang = "en-IN";
+  speechSynthesis.speak(u);
+}
 
-    // Speak only last 4 digits
-    function speakPO(po) {
-      const last4 = po.slice(-4);
-      const words = last4.split("").map(d => {
-        return {
-          "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four",
-          "5": "five", "6": "six", "7": "seven", "8": "eight", "9": "nine"
-        }[d];
-      }).join(" ");
-      const speech = new SpeechSynthesisUtterance(words);
-      speech.lang = "en-IN";
-      window.speechSynthesis.speak(speech);
-    }
+async function fetchStudyList() {
+  try {
+    const r = await fetch("/study/list");
+    const j = await r.json();
+    studyList.innerHTML = "";
+    j.slice().reverse().slice(0,6).forEach(it=>{
+      const el = document.createElement("div");
+      el.className = "po-item";
+      el.innerHTML = `<div style="font-weight:600">${escapeHtml(it.title)}</div><div class="small">${escapeHtml(it.content).slice(0,140)}</div>`;
+      studyList.appendChild(el);
+    });
+  } catch(e){
+    console.log("study list err",e);
+  }
+}
 
-    // Speak general text
-    function speak(text) {
-      const speech = new SpeechSynthesisUtterance(text);
-      speech.lang = "en-IN";
-      window.speechSynthesis.speak(speech);
-    }
+function escapeHtml(s){ return (s||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;"); }
 
-    // Form submit
-    chatForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const query = queryInput.value.trim();
-      if (!query) return;
-      addMessage(query, "user");
-      queryInput.value = "";
+/* send message to /chat */
+async function sendMessage(message) {
+  if(!message) return;
+  appendMsg(escapeHtml(message), "user");
 
-      const res = await fetch("/ask", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ query })
-      });
-      const data = await res.json();
+  const payload = { message, mode };
+  try {
+    const res = await fetch("/chat", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+    const j = await res.json();
 
-      if (Array.isArray(data.answer)) {
-        let html = "<b>📋 PO Found:</b><br>";
-        data.answer.forEach(r => {
-          html += `PO: ${r.PO} | ${r.Party} | ${r.Area} | ${r.Material}<br>`;
-        });
-        addMessage(html, "bot");
-        if (data.answer.length > 0) speakPO(data.answer[0].PO);
-      } else {
-        addMessage("🤖 " + data.answer, "bot");
-        speak(data.answer);
+    if(j.type === "po") {
+      // show only PO lines and copy first PO
+      const list = j.results || [];
+      if(list.length === 0){
+        appendMsg("No PO found (empty)", "bot");
+        return;
       }
-    });
+      // build display with only PO values (one per line)
+      const html = list.map(it => `PO: <b>${escapeHtml(it.PO)}</b>`).join("<br>");
+      appendMsg(html, "bot");
 
-    // Voice recognition
-    if ("webkitSpeechRecognition" in window) {
-      recognition = new webkitSpeechRecognition();
-      recognition.continuous = false;
-      recognition.lang = "en-IN";
-      recognition.interimResults = false;
-      recognition.onresult = function(event) {
-        queryInput.value = event.results[0][0].transcript;
-        chatForm.dispatchEvent(new Event("submit"));
-      };
-      recognition.onerror = function() {
-        alert("Mic error!");
-      };
-    } else {
-      micBtn.disabled = true;
-      micBtn.innerText = "❌";
+      // Auto-copy first PO to clipboard
+      const firstPO = list[0].PO;
+      try { await navigator.clipboard.writeText(firstPO); } catch(e){}
+
+      // Speak only last 4 digits
+      speakLast4(firstPO);
+    }
+    else if(j.type === "study" && j.source === "stored") {
+      appendMsg(escapeHtml(j.answer), "bot");
+      // speak entire answer as human-like
+      const u = new SpeechSynthesisUtterance(j.answer);
+      u.lang = "en-IN"; speechSynthesis.speak(u);
+    }
+    else if(j.type === "ai") {
+      appendMsg(escapeHtml(j.answer), "bot");
+      const u = new SpeechSynthesisUtterance(j.answer);
+      u.lang = "en-IN"; speechSynthesis.speak(u);
+    }
+    else {
+      // fallback text
+      appendMsg(escapeHtml(JSON.stringify(j)), "bot");
     }
 
-    micBtn.addEventListener("click", () => {
-      if (recognition) recognition.start();
+  } catch(err){
+    appendMsg("Network or server error.", "bot");
+    console.error(err);
+  } finally {
+    fetchStudyList();
+  }
+}
+
+/* UI: send */
+sendBtn.addEventListener("click", ()=> {
+  const t = inputText.value.trim();
+  if(!t) return;
+  sendMessage(t);
+  inputText.value = "";
+});
+
+/* teach current input (save to study DB) */
+teachBtn.addEventListener("click", async ()=>{
+  const t = inputText.value.trim();
+  if(!t) { alert("Type the content you want to teach then press Teach."); return; }
+  // For simplicity store title as first 80 chars
+  const payload = { title: t.slice(0,80), content: t };
+  try {
+    const r = await fetch("/study/add", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)
     });
-  </script>
+    const j = await r.json();
+    if(j.ok) {
+      appendMsg("✅ Saved to study memory.", "bot");
+      inputText.value = "";
+      fetchStudyList();
+    } else {
+      appendMsg("Failed to save: " + (j.error||"unknown"), "bot");
+    }
+  } catch(e) {
+    appendMsg("Save error.", "bot");
+  }
+});
+
+/* toggle mode */
+modeToggle.addEventListener("click", ()=>{
+  mode = (mode === "po") ? "study" : "po";
+  activeMode.textContent = mode === "po" ? "PO" : "STUDY";
+  modeToggle.textContent = mode === "po" ? "Switch to Study" : "Switch to PO";
+});
+
+/* mic */
+let recognition;
+if("webkitSpeechRecognition" in window){
+  recognition = new webkitSpeechRecognition();
+  recognition.lang = "en-IN";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  recognition.onresult = e => {
+    const t = e.results[0][0].transcript;
+    inputText.value = t;
+    // auto send
+    sendMessage(t);
+    inputText.value = "";
+  };
+  recognition.onerror = e => {
+    appendMsg("Mic error: " + (e.error || "unknown"), "bot");
+  };
+} else {
+  micBtn.disabled = true; micBtn.textContent = "No Mic";
+}
+micBtn.addEventListener("click", ()=> recognition && recognition.start());
+
+/* keyboard Enter */
+inputText.addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); sendBtn.click(); } });
+
+/* initial */
+appendMsg("Namaste! Ask about PO (PO mode) or switch to Study to teach the bot. In PO mode I will speak only last 4 digits when PO found.", "bot");
+fetchStudyList();
+
+</script>
 </body>
 </html>
