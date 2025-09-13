@@ -12,7 +12,7 @@ from openai import OpenAI
 from rapidfuzz import fuzz
 
 # ---------- CONFIG ----------
-OPENAI_KEY = os.getenv("OPENAI_API_KEY")  # set in env, do not hardcode
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_KEY)
 
 EMBED_MODEL = "text-embedding-3-small"
@@ -23,7 +23,6 @@ PO_CSV = "data/po_data.csv"
 
 # thresholds
 EMBED_SIM_THRESHOLD = 0.78
-FUZZY_TEXT_THRESHOLD = 0.70
 PO_AREA_STRICT = 90
 PO_WORD_FUZZY = 75
 
@@ -149,7 +148,7 @@ def search_po_csv(user_query: str):
 def openai_chat_answer(user_query: str, context_texts: Optional[List[str]] = None) -> str:
     if not OPENAI_KEY:
         return "OpenAI not configured. Please enable study data or set OPENAI_API_KEY."
-    sys_prompt = "You are Tesa AI, a helpful, friendly tutor. Use context first and answer concisely and clearly."
+    sys_prompt = "You are Tesa AI, a helpful, friendly tutor. Use study memory context first if provided. Answer concisely and clearly."
     if context_texts:
         user_prompt = "Context:\n" + "\n".join(context_texts) + "\n\nQuestion: " + user_query
     else:
@@ -206,21 +205,32 @@ def chat():
     if not user_msg:
         return jsonify({"error": "empty message"}), 400
 
+    # ----------------- PO SEARCH -----------------
     if mode == "po":
         po_matches = search_po_csv(user_msg)
         if po_matches:
-            return jsonify({"type": "po", "results": po_matches})
+            po_list = [f"PO {str(m['PO'])[-4:]}" for m in po_matches if m.get("PO")]
+            return jsonify({"type": "po", "results": po_list})
         mode = "study"
 
+    # ----------------- STUDY SEARCH -----------------
     top_matches = find_best_study_matches(user_msg, top_k=3)
+
     if top_matches and top_matches[0][0] >= EMBED_SIM_THRESHOLD:
         score, item = top_matches[0]
-        return jsonify({"type": "study", "source": "stored", "score": score, "answer": item["content"]})
+        return jsonify({
+            "type": "study",
+            "source": "memory",
+            "score": round(score, 3),
+            "answer": item["content"]
+        })
 
+    # weak match → give context to AI
     context_texts = []
     for score, item in top_matches:
         if score >= 0.35:
             context_texts.append(f"{item['title']}: {item['content']}")
+
     answer = openai_chat_answer(user_msg, context_texts if context_texts else None)
     return jsonify({"type": "ai", "source": "openai", "answer": answer})
 
