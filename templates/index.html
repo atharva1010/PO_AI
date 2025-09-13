@@ -1,156 +1,62 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>PO AI Search</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 20px;
-    }
-    h2 {
-      text-align: center;
-    }
-    .search-box {
-      display: flex;
-      justify-content: center;
-      margin-bottom: 20px;
-      flex-wrap: wrap;
-    }
-    input[type="text"] {
-      padding: 10px;
-      width: 70%;
-      font-size: 16px;
-      border: 1px solid #ccc;
-      border-radius: 5px;
-    }
-    button {
-      padding: 10px 14px;
-      margin-left: 5px;
-      font-size: 16px;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-    button:hover {
-      opacity: 0.8;
-    }
-    .mic-btn {
-      background: #007bff;
-      color: #fff;
-    }
-    .search-btn {
-      background: #28a745;
-      color: #fff;
-    }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      margin-top: 20px;
-    }
-    table, th, td {
-      border: 1px solid #999;
-    }
-    th, td {
-      padding: 10px;
-      text-align: left;
-    }
-    th {
-      background: #f2f2f2;
-    }
-    @media (max-width: 600px) {
-      input[type="text"] {
-        width: 100%;
-        margin-bottom: 10px;
-      }
-      .search-box {
-        flex-direction: column;
-        align-items: center;
-      }
-      button {
-        width: 100%;
-        margin: 5px 0;
-      }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PO AI Search</title>
+<style>
+body { font-family: Arial; padding: 20px; }
+input[type="text"] { width: 80%; padding: 10px; font-size: 16px; }
+button { padding: 10px 15px; font-size: 16px; }
+.result { margin-top: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 5px; }
+.result b { cursor: pointer; }
+@media(max-width:600px){ input[type="text"]{width:100%;} }
+</style>
 </head>
 <body>
-  <h2>PO AI Search</h2>
-  <form method="POST" class="search-box">
-    <input type="text" id="query" name="query" placeholder="Search PO, Party, Area, Material" value="{{ query }}">
-    <button type="submit" class="search-btn">Search</button>
-    <button type="button" class="mic-btn" onclick="startVoiceSearch()">🎤</button>
-  </form>
 
-  {% if results %}
-    <table id="resultsTable">
-      <tr>
-        <th>PO</th>
-        <th>Party</th>
-        <th>Area</th>
-        <th>Material</th>
-      </tr>
-      {% for row in results %}
-      <tr>
-        <td class="po-cell">{{ row.PO }}</td>
-        <td>{{ row.Party }}</td>
-        <td>{{ row.Area }}</td>
-        <td>{{ row.Material }}</td>
-      </tr>
-      {% endfor %}
-    </table>
-  {% elif query %}
-    <p>No results found for "<b>{{ query }}</b>".</p>
-  {% endif %}
+<h2>PO AI Search</h2>
+<form id="searchForm" method="POST">
+<input type="text" name="query" id="query" placeholder="Bolke ya type karke search kare..." value="{{ query }}">
+<button type="submit">Search</button>
+<button type="button" id="voiceBtn">🎤 Voice</button>
+</form>
 
-  <script>
-    // 🎤 Voice Search
-    function startVoiceSearch() {
-      if (!('webkitSpeechRecognition' in window)) {
-        alert("Voice search not supported in this browser.");
-        return;
-      }
-      let recognition = new webkitSpeechRecognition();
-      recognition.lang = "en-IN";
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
+<div id="results">
+{% if results %}
+  {% for r in results %}
+  <div class="result">
+    <b onclick="copyToClipboard('{{r['PO']}}')">PO: {{ r['PO'] }}</b><br>
+    Party: {{ r['Party'] }}<br>
+    Area: {{ r['Area'] }}<br>
+    Material: {{ r['Material'] }}
+  </div>
+  {% endfor %}
+{% endif %}
+</div>
 
-      recognition.start();
+<script>
+function copyToClipboard(text){
+    navigator.clipboard.writeText(text);
+    alert("PO copied: " + text);
+}
 
-      recognition.onresult = function(event) {
-        let speechResult = event.results[0][0].transcript;
-        document.getElementById("query").value = speechResult;
-      };
+// --- Voice recognition ---
+const voiceBtn = document.getElementById('voiceBtn');
+voiceBtn.onclick = () => {
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
 
-      recognition.onerror = function(event) {
-        alert("Voice recognition error: " + event.error);
-      };
-    }
-
-    // 🔊 Read result aloud + copy PO
-    window.onload = function() {
-      let table = document.getElementById("resultsTable");
-      if (table) {
-        let poCells = document.querySelectorAll(".po-cell");
-        let poList = [];
-        poCells.forEach(cell => {
-          poList.push(cell.innerText);
-        });
-
-        // Copy first PO to clipboard automatically
-        if (poList.length > 0) {
-          navigator.clipboard.writeText(poList[0]).then(() => {
-            console.log("PO copied:", poList[0]);
-          });
-        }
-
-        // Read results aloud
-        let msg = new SpeechSynthesisUtterance("Found " + poList.length + " result(s). Purchase Orders are " + poList.join(", "));
-        msg.lang = "en-IN";
-        speechSynthesis.speak(msg);
-      }
+    recognition.onresult = (event) => {
+        const spokenText = event.results[0][0].transcript.toUpperCase();
+        document.getElementById('query').value = spokenText;
+        document.getElementById('searchForm').submit();
     };
-  </script>
+    recognition.onerror = (e) => { alert("Voice recognition error: "+e.error); };
+    recognition.start();
+};
+</script>
 </body>
 </html>
