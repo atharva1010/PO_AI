@@ -1,15 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Tesa AI Chat</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body {
-      font-family: Arial, sans-serif;
       margin: 0;
-      padding: 0;
-      background: #f4f7fa;
+      font-family: Arial, sans-serif;
+      background: #f5f7fb;
       display: flex;
       flex-direction: column;
       height: 100vh;
@@ -17,164 +16,149 @@
     header {
       background: #4a90e2;
       color: white;
-      padding: 15px;
-      text-align: center;
-      font-size: 20px;
-      font-weight: bold;
-    }
-    .mode-switch {
+      padding: 10px 15px;
       display: flex;
-      justify-content: center;
-      background: #e9eef3;
-      padding: 8px;
+      justify-content: space-between;
+      align-items: center;
     }
-    .mode-btn {
-      margin: 0 5px;
-      padding: 8px 16px;
+    header h1 {
+      margin: 0;
+      font-size: 20px;
+    }
+    #modeSelect {
+      padding: 5px;
+      border-radius: 5px;
       border: none;
-      border-radius: 20px;
-      cursor: pointer;
-      font-weight: bold;
-      background: #d0d7de;
-      transition: background 0.3s;
     }
-    .mode-btn.active {
-      background: #4a90e2;
-      color: white;
-    }
-    #chat-container {
+    #chat {
       flex: 1;
       padding: 15px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
     }
-    .message {
-      max-width: 75%;
+    .msg {
       margin: 8px 0;
       padding: 10px 14px;
       border-radius: 12px;
+      max-width: 75%;
       line-height: 1.4;
-      white-space: pre-line;
     }
     .user {
       align-self: flex-end;
       background: #4a90e2;
       color: white;
-      border-bottom-right-radius: 2px;
     }
     .bot {
       align-self: flex-start;
-      background: #e2e2e2;
-      color: #000;
-      border-bottom-left-radius: 2px;
+      background: #e6e6e6;
     }
-    .input-area {
+    #inputBox {
       display: flex;
-      padding: 12px;
-      background: white;
       border-top: 1px solid #ddd;
     }
-    #user-input {
+    #message {
       flex: 1;
-      padding: 10px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      font-size: 16px;
-    }
-    #send-btn {
-      margin-left: 10px;
-      padding: 10px 20px;
+      padding: 12px;
       border: none;
-      border-radius: 8px;
+      font-size: 15px;
+    }
+    #sendBtn {
       background: #4a90e2;
+      border: none;
       color: white;
-      font-size: 16px;
+      padding: 12px 20px;
       cursor: pointer;
     }
-    #send-btn:hover {
-      background: #357abd;
+    #sendBtn:hover {
+      background: #357ab8;
     }
   </style>
 </head>
 <body>
-  <header>🤖 Tesa AI Chat</header>
+  <header>
+    <h1>🤖 Tesa AI Chat</h1>
+    <select id="modeSelect">
+      <option value="po">Search Mode</option>
+      <option value="study">Study Mode</option>
+    </select>
+  </header>
 
-  <div class="mode-switch">
-    <button class="mode-btn active" onclick="setMode('po')">Search Mode</button>
-    <button class="mode-btn" onclick="setMode('study')">Study Mode</button>
-  </div>
+  <div id="chat"></div>
 
-  <div id="chat-container"></div>
-
-  <div class="input-area">
-    <input type="text" id="user-input" placeholder="Type your message..." onkeypress="if(event.key==='Enter') sendMessage()">
-    <button id="send-btn" onclick="sendMessage()">Send</button>
+  <div id="inputBox">
+    <input type="text" id="message" placeholder="Type your message..." />
+    <button id="sendBtn">Send</button>
   </div>
 
   <script>
-    let currentMode = "po";
+    const chatBox = document.getElementById("chat");
+    const msgInput = document.getElementById("message");
+    const sendBtn = document.getElementById("sendBtn");
+    const modeSelect = document.getElementById("modeSelect");
 
-    function setMode(mode) {
-      currentMode = mode;
-      document.querySelectorAll(".mode-btn").forEach(btn => btn.classList.remove("active"));
-      document.querySelector(`.mode-btn:nth-child(${mode === "po" ? 1 : 2})`).classList.add("active");
-      addMessage(`🔄 Mode switched to ${mode.toUpperCase()} mode.`, "bot");
+    function appendMessage(sender, text) {
+      const div = document.createElement("div");
+      div.classList.add("msg", sender === "user" ? "user" : "bot");
+      div.textContent = text;
+      chatBox.appendChild(div);
+      chatBox.scrollTop = chatBox.scrollHeight;
     }
 
     async function sendMessage() {
-      const input = document.getElementById("user-input");
-      const msg = input.value.trim();
-      if (!msg) return;
+      const text = msgInput.value.trim();
+      if (!text) return;
 
-      addMessage(msg, "user");
-      input.value = "";
+      appendMessage("user", text);
+      msgInput.value = "";
 
-      try {
-        const res = await fetch("/chat", {
+      const mode = modeSelect.value;
+
+      if (mode === "study") {
+        // save study data
+        await fetch("/study/add", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: msg, mode: currentMode })
+          body: JSON.stringify({ title: "", content: text }),
         });
+        appendMessage("bot", "✅ Learned: \"" + text + "\"");
+        return;
+      }
 
-        const data = await res.json();
-        let reply = "";
+      // Normal/PO mode
+      const res = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, mode }),
+      });
+      const data = await res.json();
 
-        if (data.type === "po") {
-          if (data.results && data.results.length > 0) {
-            reply = "📑 PO Results:\n" + data.results.map(r =>
-              `PO: ${r.PO}, Party: ${r.Party}, Area: ${r.Area}, Material: ${r.Material}`
-            ).join("\n");
-          } else {
-            reply = "❌ No PO found.";
-          }
-        } else if (data.type === "study") {
-          reply = `📝 From Study Memory:\n${data.answer}`;
-        } else if (data.type === "ai") {
-          reply = `🤖 AI:\n${data.answer}`;
-        } else if (data.error) {
-          reply = `⚠️ Error: ${data.error}`;
+      if (data.type === "po") {
+        if (data.results.length > 0) {
+          let reply = "📑 PO Results:\n";
+          data.results.forEach((m) => {
+            reply += `PO: ${m.PO}, PARTY: ${m.PARTY}, AREA: ${m.AREA}, MATERIAL: ${m.MATERIAL}\n`;
+          });
+          appendMessage("bot", reply.trim());
         } else {
-          reply = "⚠️ Unknown response format.";
+          appendMessage("bot", "❌ No matching PO found.");
         }
-
-        addMessage(reply, "bot");
-      } catch (e) {
-        addMessage("⚠️ Failed to connect to server.", "bot");
+      } else if (data.type === "study") {
+        appendMessage("bot", "📝 " + data.answer);
+      } else if (data.type === "ai") {
+        appendMessage("bot", "🤖 " + data.answer);
+      } else {
+        appendMessage("bot", "⚠️ Unexpected response.");
       }
     }
 
-    function addMessage(text, sender) {
-      const container = document.getElementById("chat-container");
-      const msgDiv = document.createElement("div");
-      msgDiv.classList.add("message", sender);
-      msgDiv.textContent = text;
-      container.appendChild(msgDiv);
-      container.scrollTop = container.scrollHeight; // auto-scroll
-    }
+    sendBtn.addEventListener("click", sendMessage);
+    msgInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") sendMessage();
+    });
 
-    // greeting
-    addMessage("👋 Namaste! Mode: PO. Ask PO queries or switch to Study Mode to teach me.", "bot");
+    // Greeting
+    appendMessage("bot", "👋 Namaste! Mode: PO. Ask PO queries or switch to Study Mode to teach me.");
   </script>
 </body>
 </html>
