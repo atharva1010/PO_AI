@@ -2,204 +2,187 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Tesa AI Chat</title>
+  <title>AI Chatbot</title>
   <style>
     body {
       margin: 0;
       font-family: Arial, sans-serif;
-      background: #f9f9f9;
       height: 100vh;
-      overflow: hidden; /* freeze body */
       display: flex;
       flex-direction: column;
+      background: #f8f9fa;
+      overflow: hidden; /* Freeze body */
     }
-
     header {
-      background: #1a73e8;
+      background: #343a40;
       color: white;
-      padding: 12px;
+      padding: 10px;
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
-
     header h1 {
       margin: 0;
-      font-size: 18px;
+      font-size: 20px;
     }
-
-    #mode-buttons {
-      display: flex;
-      gap: 10px;
-    }
-
-    button {
-      padding: 6px 12px;
-      border: none;
+    #modeSelect {
+      padding: 5px;
       border-radius: 5px;
-      cursor: pointer;
-      font-size: 14px;
     }
-
-    .primary {
-      background: #fff;
-      color: #1a73e8;
-      font-weight: bold;
+    #searchBar, #fileUpload {
+      display: none;
+      margin: 10px;
     }
-
-    .secondary {
-      background: #ddd;
-      color: #333;
-    }
-
     #chat-container {
       flex: 1;
       display: flex;
       flex-direction: column;
+      overflow-y: auto; /* Scroll only chat */
       padding: 10px;
+      background: #fff;
     }
-
-    #chat-box {
-      flex: 1;
-      background: white;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      padding: 10px;
-      overflow-y: auto; /* only chat scrolls */
-      margin-bottom: 10px;
-    }
-
-    .msg {
-      margin: 6px 0;
+    .chat-message {
+      margin: 5px 0;
       padding: 8px 12px;
-      border-radius: 10px;
-      max-width: 70%;
-      word-wrap: break-word;
+      border-radius: 6px;
+      max-width: 80%;
     }
-
     .user {
-      background: #e1f5fe;
+      background: #007bff;
+      color: white;
       align-self: flex-end;
     }
-
     .bot {
-      background: #e8eaf6;
+      background: #e9ecef;
+      color: black;
       align-self: flex-start;
     }
-
-    #controls {
+    #input-container {
       display: flex;
-      gap: 8px;
+      padding: 10px;
+      background: #f1f1f1;
     }
-
-    #message {
+    #messageInput {
       flex: 1;
       padding: 8px;
-      border: 1px solid #ccc;
       border-radius: 5px;
-    }
-
-    #upload-section {
-      margin-top: 5px;
-      display: none; /* only show in study mode */
-    }
-
-    #upload-section input {
       border: 1px solid #ccc;
-      padding: 5px;
+    }
+    button {
+      margin-left: 10px;
+      padding: 8px 12px;
+      border: none;
       border-radius: 5px;
+      background: #007bff;
+      color: white;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
   <header>
-    <h1>🤖 Tesa AI Chat</h1>
-    <div id="mode-buttons">
-      <button id="po-mode" class="primary">Search Mode</button>
-      <button id="study-mode" class="secondary">Study Mode</button>
-      <button id="new-chat" class="secondary">New Chat</button>
-    </div>
+    <h1>AI Chatbot</h1>
+    <select id="modeSelect">
+      <option value="study">Study Mode</option>
+      <option value="search">Search Mode</option>
+    </select>
   </header>
 
-  <div id="chat-container">
-    <div id="chat-box"></div>
-    <div id="controls">
-      <input type="text" id="message" placeholder="Type your message...">
-      <button onclick="sendMessage()">Send</button>
-    </div>
-    <div id="upload-section">
-      <form id="uploadForm" enctype="multipart/form-data">
-        <input type="file" name="file" id="fileInput" accept=".pdf,.txt,.docx,.csv,.xlsx">
-        <button type="submit">Upload & Study</button>
-      </form>
-    </div>
+  <!-- Search bar (visible only in search mode) -->
+  <div id="searchBar">
+    <input type="text" id="searchInput" placeholder="Search your study data...">
+    <button onclick="searchData()">Search</button>
+  </div>
+
+  <!-- File upload (visible only in study mode) -->
+  <div id="fileUpload">
+    <input type="file" id="fileInput" multiple>
+    <button onclick="uploadFiles()">Upload</button>
+  </div>
+
+  <div id="chat-container"></div>
+
+  <div id="input-container">
+    <input type="text" id="messageInput" placeholder="Type your message...">
+    <button onclick="sendMessage()">Send</button>
   </div>
 
   <script>
-    let mode = "PO"; // default mode
-    const chatBox = document.getElementById("chat-box");
-    const messageInput = document.getElementById("message");
+    const modeSelect = document.getElementById('modeSelect');
+    const searchBar = document.getElementById('searchBar');
+    const fileUpload = document.getElementById('fileUpload');
+    const chatContainer = document.getElementById('chat-container');
 
-    function addMessage(text, sender) {
-      const msg = document.createElement("div");
-      msg.classList.add("msg", sender);
-      msg.innerText = text;
-      chatBox.appendChild(msg);
-      chatBox.scrollTop = chatBox.scrollHeight;
-    }
+    modeSelect.addEventListener('change', () => {
+      chatContainer.innerHTML = ""; // Clear chat history
+      if (modeSelect.value === "search") {
+        searchBar.style.display = "block";
+        fileUpload.style.display = "none";
+      } else {
+        searchBar.style.display = "none";
+        fileUpload.style.display = "block";
+      }
+    });
 
-    async function sendMessage() {
-      const text = messageInput.value.trim();
-      if (!text) return;
-      addMessage("You: " + text, "user");
-      messageInput.value = "";
+    function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const text = input.value.trim();
+      if (text === "") return;
 
-      const response = await fetch("/chat", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({message: text, mode})
+      addMessage(text, "user");
+
+      fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, mode: modeSelect.value })
+      })
+      .then(res => res.json())
+      .then(data => {
+        addMessage(data.reply, "bot");
       });
 
-      const data = await response.json();
-      addMessage("AI: " + data.answer, "bot");
+      input.value = "";
     }
 
-    // Mode switching
-    document.getElementById("po-mode").onclick = () => switchMode("PO");
-    document.getElementById("study-mode").onclick = () => switchMode("STUDY");
-
-    function switchMode(newMode) {
-      mode = newMode;
-      chatBox.innerHTML = ""; // clear chat
-      addMessage(`🔄 Mode switched to ${mode} mode.`, "bot");
-
-      // Show upload only in study mode
-      document.getElementById("upload-section").style.display = (mode === "STUDY") ? "block" : "none";
-
-      // Button styles
-      document.getElementById("po-mode").className = (mode === "PO") ? "primary" : "secondary";
-      document.getElementById("study-mode").className = (mode === "STUDY") ? "primary" : "secondary";
+    function addMessage(text, sender) {
+      const div = document.createElement('div');
+      div.className = `chat-message ${sender}`;
+      div.textContent = text;
+      chatContainer.appendChild(div);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
-    // New Chat
-    document.getElementById("new-chat").onclick = () => {
-      chatBox.innerHTML = "";
-      addMessage("🆕 New chat started.", "bot");
-    };
+    function searchData() {
+      const query = document.getElementById('searchInput').value;
+      if (!query) return;
 
-    // File Upload for Study Mode
-    document.getElementById("uploadForm").onsubmit = async (e) => {
-      e.preventDefault();
-      const fileInput = document.getElementById("fileInput");
-      if (!fileInput.files.length) return;
+      fetch('/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query })
+      })
+      .then(res => res.json())
+      .then(data => {
+        addMessage("🔎 " + data.results.join(", "), "bot");
+      });
+    }
+
+    function uploadFiles() {
+      const files = document.getElementById('fileInput').files;
+      if (files.length === 0) return;
 
       const formData = new FormData();
-      formData.append("file", fileInput.files[0]);
+      for (let f of files) formData.append("files", f);
 
-      const res = await fetch("/upload", { method: "POST", body: formData });
-      const data = await res.json();
-      addMessage("📂 " + data.message, "bot");
-    };
+      fetch('/upload', {
+        method: 'POST',
+        body: formData
+      })
+      .then(res => res.json())
+      .then(data => {
+        addMessage("✅ " + data.message, "bot");
+      });
+    }
   </script>
 </body>
 </html>
