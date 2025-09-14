@@ -6,3 +6,4 @@ gunicorn
 numpy
 fitz
 frontend
+tools
