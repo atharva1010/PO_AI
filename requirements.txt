@@ -8,3 +8,4 @@ fitz
 frontend
 tools
 docx
+exceptions
