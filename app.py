@@ -18,12 +18,9 @@ client = OpenAI(api_key=OPENAI_KEY)
 EMBED_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-4o-mini"
 
-# DB file location → root folder, agar permission issue ho to /tmp/
-DB_FILE = os.path.join(os.path.dirname(__file__), "study_data.db")
-if not os.access(os.path.dirname(DB_FILE) or ".", os.W_OK):
-    DB_FILE = "/tmp/study_data.db"
-
-PO_CSV = os.path.join(os.path.dirname(__file__), "data/po_data.csv")
+BASE_DIR = os.path.dirname(__file__)
+DB_PATH = os.path.join(BASE_DIR, "study_data.db")
+PO_CSV = os.path.join(BASE_DIR, "data/po_data.csv")
 
 # thresholds
 EMBED_SIM_THRESHOLD = 0.78
@@ -43,9 +40,7 @@ if "AREA" not in po_df.columns:
 
 # ---------- SQLITE helpers ----------
 def init_db():
-    """Create study_data.db automatically if not exists"""
-    print(f"📂 Using DB file: {DB_FILE}")
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("""
     CREATE TABLE IF NOT EXISTS study (
@@ -58,10 +53,9 @@ def init_db():
     """)
     conn.commit()
     conn.close()
-    print("✅ study_data.db created / opened successfully.")
 
 def add_study_item(title: str, content: str, embedding: Optional[List[float]] = None):
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     emb_json = json.dumps(embedding) if embedding is not None else None
     cur.execute("INSERT INTO study (title, content, embedding, created_at) VALUES (?, ?, ?, ?)",
@@ -70,7 +64,7 @@ def add_study_item(title: str, content: str, embedding: Optional[List[float]] = 
     conn.close()
 
 def list_study_items(limit: int = 50):
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
     cur.execute("SELECT id, title, content, embedding, created_at FROM study ORDER BY created_at DESC LIMIT ?", (limit,))
     rows = cur.fetchall()
@@ -151,6 +145,19 @@ def search_po_csv(user_query: str):
             })
     return matches
 
+# ---------- Normalization helper ----------
+def normalize_study_text(raw: str) -> str:
+    txt = raw.strip()
+
+    # Handle "name" type teaching
+    m = re.search(r"(?:name|naam).*?([A-Za-z0-9 ]+)", txt, re.IGNORECASE)
+    if m:
+        val = m.group(1).strip()
+        return f"Mera naam {val} hai."
+
+    # fallback: return original
+    return txt
+
 # ---------- OpenAI chat fallback ----------
 def openai_chat_answer(user_query: str, context_texts: Optional[List[str]] = None) -> str:
     if not OPENAI_KEY:
@@ -186,16 +193,20 @@ def index():
 def study_add():
     data = request.json or {}
     title = (data.get("title") or "").strip()
-    content = (data.get("content") or "").strip()
-    if not content:
+    raw_content = (data.get("content") or "").strip()
+    if not raw_content:
         return jsonify({"ok": False, "error": "content required"}), 400
+
+    # normalize content
+    content = normalize_study_text(raw_content)
+
     emb = None
     try:
         emb = get_embedding(content)
     except Exception as e:
         print("embedding error:", e)
     add_study_item(title or content[:80], content, emb)
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "saved": content})
 
 @app.route("/study/list", methods=["GET"])
 def study_list():
