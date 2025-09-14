@@ -1,165 +1,101 @@
+from flask import Flask, render_template, request, jsonify
 import os
-import sqlite3
-from flask import Flask, request, jsonify, render_template
-from werkzeug.utils import secure_filename
-from openai import OpenAI
 import pandas as pd
-import fitz  # PyMuPDF for PDF
-import docx   # for Word files
+import fitz  # PyMuPDF for PDFs
+import docx  # python-docx for Word files
+from werkzeug.utils import secure_filename
 
-# --- Config ---
 app = Flask(__name__)
-app.config["UPLOAD_FOLDER"] = "uploads"
-os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-DB_FILE = "study_data.db"
-client = OpenAI(api_key="YOUR_API_KEY")
+UPLOAD_FOLDER = "uploads"
+STUDY_FILE = "data/study_data.csv"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs("data", exist_ok=True)
 
-# --- Database Setup ---
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS study_data (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        question TEXT,
-                        answer TEXT
-                    )''')
-    conn.commit()
-    conn.close()
+# Agar study file nahi hai to ek bana do
+if not os.path.exists(STUDY_FILE):
+    pd.DataFrame(columns=["question", "answer"]).to_csv(STUDY_FILE, index=False)
 
-init_db()
 
-# --- Helper: Insert Study Data ---
-def save_to_db(question, answer):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO study_data (question, answer) VALUES (?, ?)", (question.strip(), answer.strip()))
-    conn.commit()
-    conn.close()
-
-# --- Helper: Search Study Data ---
-def search_study_data(query):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT answer FROM study_data WHERE LOWER(question) LIKE ?", ('%' + query.lower() + '%',))
-    result = cursor.fetchone()
-    conn.close()
-    return result[0] if result else None
-
-# --- Helper: AI Answer ---
-def ask_ai(query):
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": query}],
-        temperature=0.3
-    )
-    return response.choices[0].message.content.strip()
-
-# --- Helper: Extract Text from Files ---
-def extract_text_from_file(filepath):
+def extract_text_from_file(file_path):
     text = ""
-    ext = os.path.splitext(filepath)[1].lower()
-
-    if ext == ".txt":
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+    if file_path.endswith(".txt"):
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
             text = f.read()
-
-    elif ext == ".pdf":
-        doc = fitz.open(filepath)
+    elif file_path.endswith(".pdf"):
+        doc = fitz.open(file_path)
         for page in doc:
             text += page.get_text()
-
-    elif ext in [".xls", ".xlsx", ".csv"]:
-        df = pd.read_excel(filepath) if ext in [".xls", ".xlsx"] else pd.read_csv(filepath)
+    elif file_path.endswith(".docx"):
+        doc = docx.Document(file_path)
+        for para in doc.paragraphs:
+            text += para.text + "\n"
+    elif file_path.endswith(".xlsx"):
+        df = pd.read_excel(file_path)
         text = df.to_string()
+    return text.strip()
 
-    elif ext == ".docx":
-        d = docx.Document(filepath)
-        text = "\n".join([para.text for para in d.paragraphs])
 
-    return text
-
-# --- Helper: Auto Question Generation ---
-def generate_questions_from_text(text):
-    prompt = f"""
-    Niche diye gaye text ke basis par jitne bhi possible short and clear Question-Answer pairs ban sakte hain unhe banao.
-    Text:
-    {text}
-
-    Format:
-    Q: <question>
-    A: <answer>
-    """
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3
-    )
-    return response.choices[0].message.content.strip()
-
-# --- Routes ---
 @app.route("/")
 def index():
     return render_template("index.html")
 
+
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.json
-    query = data.get("message")
-    mode = data.get("mode", "PO")
+    message = data.get("message", "")
+    mode = data.get("mode", "study")
 
-    # First check in study memory
-    answer = search_study_data(query)
+    if mode == "study":
+        # simple chatbot style
+        return jsonify({"reply": f"📝 Studied message: {message}"})
+    else:
+        # search mode simple echo
+        df = pd.read_csv(STUDY_FILE)
+        if df.empty:
+            return jsonify({"reply": "⚠️ No study data available."})
+        results = df[df["question"].str.contains(message, case=False, na=False)]
+        if results.empty:
+            return jsonify({"reply": "❌ No match found."})
+        return jsonify({"reply": results.iloc[0]['answer']})
 
-    if not answer:
-        # Fallback to AI
-        if mode == "PO":
-            answer = ask_ai(query)
-        else:
-            answer = "Study mode enabled. Please teach me or upload a file."
 
-    return jsonify({"answer": answer})
-
-@app.route("/study", methods=["POST"])
-def study():
+@app.route("/search", methods=["POST"])
+def search():
     data = request.json
-    question = data.get("question")
-    answer = data.get("answer")
+    query = data.get("query", "")
+    df = pd.read_csv(STUDY_FILE)
+    matches = df[df["question"].str.contains(query, case=False, na=False)]
+    if matches.empty:
+        return jsonify({"results": ["❌ No results found"]})
+    return jsonify({"results": matches["answer"].head(5).tolist()})
 
-    if question and answer:
-        save_to_db(question, answer)
-        return jsonify({"status": "success", "message": "Data saved."})
-    return jsonify({"status": "error", "message": "Missing question or answer."})
 
 @app.route("/upload", methods=["POST"])
-def upload_file():
-    if "file" not in request.files:
-        return jsonify({"status": "error", "message": "No file uploaded."})
+def upload():
+    if "files" not in request.files:
+        return jsonify({"message": "No file uploaded."})
 
-    file = request.files["file"]
-    if file.filename == "":
-        return jsonify({"status": "error", "message": "Empty filename."})
+    files = request.files.getlist("files")
+    study_df = pd.read_csv(STUDY_FILE)
 
-    filepath = os.path.join(app.config["UPLOAD_FOLDER"], secure_filename(file.filename))
-    file.save(filepath)
+    for file in files:
+        filename = secure_filename(file.filename)
+        path = os.path.join(UPLOAD_FOLDER, filename)
+        file.save(path)
 
-    # Extract text
-    extracted_text = extract_text_from_file(filepath)
+        text = extract_text_from_file(path)
+        if text:
+            # For now just save full text as one study entry
+            study_df = pd.concat(
+                [study_df, pd.DataFrame([{"question": filename, "answer": text}])],
+                ignore_index=True,
+            )
 
-    # Generate Q/A
-    qa_text = generate_questions_from_text(extracted_text)
+    study_df.to_csv(STUDY_FILE, index=False)
+    return jsonify({"message": "Files studied successfully!"})
 
-    # Parse Q/A and Save
-    for block in qa_text.split("\n"):
-        if block.startswith("Q:"):
-            q = block.replace("Q:", "").strip()
-        elif block.startswith("A:"):
-            a = block.replace("A:", "").strip()
-            if q and a:
-                save_to_db(q, a)
 
-    return jsonify({"status": "success", "message": "File studied and data saved!"})
-
-# --- Run ---
 if __name__ == "__main__":
     app.run(debug=True)
