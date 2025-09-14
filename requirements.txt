@@ -4,3 +4,4 @@ rapidfuzz
 openai
 gunicorn
 numpy
+fitz
