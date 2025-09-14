@@ -3,9 +3,6 @@ pandas
 rapidfuzz
 openai
 gunicorn
-numpy
-fitz
-frontend
-tools
+numpy==1.26.4
+pymupdf
 python-docx
-exceptions
