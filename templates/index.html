@@ -1,164 +1,205 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
   <title>Tesa AI Chat</title>
   <style>
     body {
       margin: 0;
       font-family: Arial, sans-serif;
-      background: #f5f7fb;
+      background: #f9f9f9;
+      height: 100vh;
+      overflow: hidden; /* freeze body */
       display: flex;
       flex-direction: column;
-      height: 100vh;
     }
+
     header {
-      background: #4a90e2;
+      background: #1a73e8;
       color: white;
-      padding: 10px 15px;
+      padding: 12px;
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
+
     header h1 {
       margin: 0;
-      font-size: 20px;
+      font-size: 18px;
     }
-    #modeSelect {
-      padding: 5px;
-      border-radius: 5px;
+
+    #mode-buttons {
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      padding: 6px 12px;
       border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
     }
-    #chat {
+
+    .primary {
+      background: #fff;
+      color: #1a73e8;
+      font-weight: bold;
+    }
+
+    .secondary {
+      background: #ddd;
+      color: #333;
+    }
+
+    #chat-container {
       flex: 1;
-      padding: 15px;
-      overflow-y: auto;
       display: flex;
       flex-direction: column;
+      padding: 10px;
     }
+
+    #chat-box {
+      flex: 1;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 10px;
+      overflow-y: auto; /* only chat scrolls */
+      margin-bottom: 10px;
+    }
+
     .msg {
-      margin: 8px 0;
-      padding: 10px 14px;
-      border-radius: 12px;
-      max-width: 75%;
-      line-height: 1.4;
+      margin: 6px 0;
+      padding: 8px 12px;
+      border-radius: 10px;
+      max-width: 70%;
+      word-wrap: break-word;
     }
+
     .user {
+      background: #e1f5fe;
       align-self: flex-end;
-      background: #4a90e2;
-      color: white;
     }
+
     .bot {
+      background: #e8eaf6;
       align-self: flex-start;
-      background: #e6e6e6;
     }
-    #inputBox {
+
+    #controls {
       display: flex;
-      border-top: 1px solid #ddd;
+      gap: 8px;
     }
+
     #message {
       flex: 1;
-      padding: 12px;
-      border: none;
-      font-size: 15px;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
     }
-    #sendBtn {
-      background: #4a90e2;
-      border: none;
-      color: white;
-      padding: 12px 20px;
-      cursor: pointer;
+
+    #upload-section {
+      margin-top: 5px;
+      display: none; /* only show in study mode */
     }
-    #sendBtn:hover {
-      background: #357ab8;
+
+    #upload-section input {
+      border: 1px solid #ccc;
+      padding: 5px;
+      border-radius: 5px;
     }
   </style>
 </head>
 <body>
   <header>
     <h1>🤖 Tesa AI Chat</h1>
-    <select id="modeSelect">
-      <option value="po">Search Mode</option>
-      <option value="study">Study Mode</option>
-    </select>
+    <div id="mode-buttons">
+      <button id="po-mode" class="primary">Search Mode</button>
+      <button id="study-mode" class="secondary">Study Mode</button>
+      <button id="new-chat" class="secondary">New Chat</button>
+    </div>
   </header>
 
-  <div id="chat"></div>
-
-  <div id="inputBox">
-    <input type="text" id="message" placeholder="Type your message..." />
-    <button id="sendBtn">Send</button>
+  <div id="chat-container">
+    <div id="chat-box"></div>
+    <div id="controls">
+      <input type="text" id="message" placeholder="Type your message...">
+      <button onclick="sendMessage()">Send</button>
+    </div>
+    <div id="upload-section">
+      <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" name="file" id="fileInput" accept=".pdf,.txt,.docx,.csv,.xlsx">
+        <button type="submit">Upload & Study</button>
+      </form>
+    </div>
   </div>
 
   <script>
-    const chatBox = document.getElementById("chat");
-    const msgInput = document.getElementById("message");
-    const sendBtn = document.getElementById("sendBtn");
-    const modeSelect = document.getElementById("modeSelect");
+    let mode = "PO"; // default mode
+    const chatBox = document.getElementById("chat-box");
+    const messageInput = document.getElementById("message");
 
-    function appendMessage(sender, text) {
-      const div = document.createElement("div");
-      div.classList.add("msg", sender === "user" ? "user" : "bot");
-      div.textContent = text;
-      chatBox.appendChild(div);
+    function addMessage(text, sender) {
+      const msg = document.createElement("div");
+      msg.classList.add("msg", sender);
+      msg.innerText = text;
+      chatBox.appendChild(msg);
       chatBox.scrollTop = chatBox.scrollHeight;
     }
 
     async function sendMessage() {
-      const text = msgInput.value.trim();
+      const text = messageInput.value.trim();
       if (!text) return;
+      addMessage("You: " + text, "user");
+      messageInput.value = "";
 
-      appendMessage("user", text);
-      msgInput.value = "";
-
-      const mode = modeSelect.value;
-
-      if (mode === "study") {
-        // save study data
-        await fetch("/study/add", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: "", content: text }),
-        });
-        appendMessage("bot", "✅ Learned: \"" + text + "\"");
-        return;
-      }
-
-      // Normal/PO mode
-      const res = await fetch("/chat", {
+      const response = await fetch("/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, mode }),
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({message: text, mode})
       });
-      const data = await res.json();
 
-      if (data.type === "po") {
-        if (data.results.length > 0) {
-          let reply = "📑 PO Results:\n";
-          data.results.forEach((m) => {
-            reply += `PO: ${m.PO}, PARTY: ${m.PARTY}, AREA: ${m.AREA}, MATERIAL: ${m.MATERIAL}\n`;
-          });
-          appendMessage("bot", reply.trim());
-        } else {
-          appendMessage("bot", "❌ No matching PO found.");
-        }
-      } else if (data.type === "study") {
-        appendMessage("bot", "📝 " + data.answer);
-      } else if (data.type === "ai") {
-        appendMessage("bot", "🤖 " + data.answer);
-      } else {
-        appendMessage("bot", "⚠️ Unexpected response.");
-      }
+      const data = await response.json();
+      addMessage("AI: " + data.answer, "bot");
     }
 
-    sendBtn.addEventListener("click", sendMessage);
-    msgInput.addEventListener("keypress", (e) => {
-      if (e.key === "Enter") sendMessage();
-    });
+    // Mode switching
+    document.getElementById("po-mode").onclick = () => switchMode("PO");
+    document.getElementById("study-mode").onclick = () => switchMode("STUDY");
 
-    // Greeting
-    appendMessage("bot", "👋 Namaste! Mode: PO. Ask PO queries or switch to Study Mode to teach me.");
+    function switchMode(newMode) {
+      mode = newMode;
+      chatBox.innerHTML = ""; // clear chat
+      addMessage(`🔄 Mode switched to ${mode} mode.`, "bot");
+
+      // Show upload only in study mode
+      document.getElementById("upload-section").style.display = (mode === "STUDY") ? "block" : "none";
+
+      // Button styles
+      document.getElementById("po-mode").className = (mode === "PO") ? "primary" : "secondary";
+      document.getElementById("study-mode").className = (mode === "STUDY") ? "primary" : "secondary";
+    }
+
+    // New Chat
+    document.getElementById("new-chat").onclick = () => {
+      chatBox.innerHTML = "";
+      addMessage("🆕 New chat started.", "bot");
+    };
+
+    // File Upload for Study Mode
+    document.getElementById("uploadForm").onsubmit = async (e) => {
+      e.preventDefault();
+      const fileInput = document.getElementById("fileInput");
+      if (!fileInput.files.length) return;
+
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+
+      const res = await fetch("/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      addMessage("📂 " + data.message, "bot");
+    };
   </script>
 </body>
 </html>
